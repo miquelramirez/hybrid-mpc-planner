@@ -1,0 +1,4 @@
+import os
+Import('env')
+
+env.ParseConfig( 'pkg-config --cflags --libs ompl')
