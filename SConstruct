@@ -55,12 +55,14 @@ env['STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME']=1
 
 env.Append(CPPPATH = [ os.path.abspath(p) for p in include_paths ])
 
-src_objs = [ env.Object(s) for s in Glob('./*.cxx') ] # This will include both the main.cxx and the generated code for the particular instance
-
+src_objs = []
 env.Append(LIBS=[fs0_libname, 'boost_program_options', 'boost_serialization', 'boost_system', 'boost_timer', 'boost_chrono', 'rt', 'boost_filesystem', 'm'])
 env.Append(LIBPATH=[ os.path.abspath(p) for p in lib_paths ])
+
 Export('env')
-SConscript( os.path.join(env['fs0'], 'gecode_dependencies') )
-SConscript( os.path.join(env['fs0'], 'ompl_dependencies'))
+Export('src_objs')
+SConscript( 'gecode_dependencies' )
+SConscript( 'ompl_dependencies' )
+SConscript( 'src/SConscript')
 
 env.SharedLibrary(lib_name, src_objs )
