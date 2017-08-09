@@ -1,0 +1,19 @@
+import os
+Import('env')
+
+# MRJ: This probably should be acquired from an environment variable
+soplex_include_path = '/usr/local/include'
+include_paths = [ soplex_include_path]
+env.Append( CPPPATH = [ os.path.abspath(p) for p in include_paths ] )
+
+# MRJ: I am not sure we will need ALL of the libs
+soplex_libs = [
+	'soplex',
+	'gmp',
+	'z'
+]
+
+soplex_lib_path = [ '/usr/local/lib' ]
+
+env.Append( LIBS = soplex_libs )
+env.Append( LIBPATH = [ os.path.abspath(p) for p in soplex_lib_path ] )
