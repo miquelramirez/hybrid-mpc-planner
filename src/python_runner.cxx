@@ -7,8 +7,8 @@
 #include <search/runner.hxx>
 #include <utils/config.hxx>
 #include <utils/logging.hxx>
-#include <aptk2/tools/logging.hxx>
-#include <aptk2/tools/resources_control.hxx>
+#include <lapkt/tools/logging.hxx>
+#include <lapkt/tools/resources_control.hxx>
 
 #include <search/result.hxx>
 
@@ -18,9 +18,30 @@
 #include <utils/config.hxx>
 #include <utils/logging.hxx>
 
-#include <search/ompl/default_engine.hxx>
+// MRJ: Deactivated for now
+// #include <search/ompl/default_engine.hxx>
 
-using namespace fs0;
+namespace fs0 { namespace drivers {
+
+class SingletonLock {
+    PythonRunner& _runner;
+
+public:
+    SingletonLock( PythonRunner& r )
+        : _runner(r) {
+            LanguageInfo::instance( std::move(_runner._lang_info ));
+            ProblemInfo::setInstance( std::move(_runner._problem_info));
+            Problem::setInstance( std::move(_runner._problem) );
+            Config::setAsGlobal( std::move(_runner._instance_config) );
+        }
+
+    ~SingletonLock() {
+        _runner._problem_info = ProblemInfo::claimOwnership();
+        _runner._lang_info = fstrips::LanguageInfo::claimOwnership();
+        _runner._problem = Problem::claimOwnership();
+        _runner._instance_config = Config::claimOwnership();
+    }
+};
 
 PythonRunner::PythonRunner() :
     _plan_duration( 0.0 ),
@@ -39,7 +60,8 @@ PythonRunner::PythonRunner() :
     _budget(std::numeric_limits<unsigned>::max()),
     _retry_when_failed(false),
     _simulate_plan(false),
-    _verify_plan( false ) {
+    _verify_plan( false ),
+    _current_driver( nullptr ) {
 
 }
 
@@ -70,12 +92,13 @@ void
 PythonRunner::setup() {
     /* code */
     float t0 = aptk::time_used();
-    Logger::init( get_output_dir() + "/logs" );
-    aptk::Logger::init( get_output_dir() + "/logs/search" );
+
+    lapkt::tools::Logger::init(_options.getOutputDir() + "/logs");
+
     _instance_config = std::unique_ptr<Config>(new Config(_config));
     Config::setAsGlobal( std::move(_instance_config) );
 
-    FINFO("main", "Generating the problem (" << get_data_dir() << ")... ");
+    LPT_INFO("main", "Generating the problem (" << get_data_dir() << ")... ");
     auto data = Loader::loadJSONObject( get_data_dir() + "/problem.json");
 
     //! This will generate the problem and set it as the global singleton instance
@@ -84,36 +107,36 @@ PythonRunner::setup() {
 
     Config& config = Config::instance();
 
-    FINFO("main", "Problem instance loaded:" << std::endl << Problem::getInstance());
+    LPT_INFO("main", "Problem instance loaded:" << std::endl << Problem::getInstance());
 
-    FINFO("main", "Applying command-line arguments options to planner configuration:");
+    LPT_INFO("main", "Applying options to planner configuration:");
 
     double horizon = get_horizon();
-    FINFO("main", "\tHorizon: " << horizon << " secs" );
+    LPT_INFO("main", "\tHorizon: " << horizon << " secs" );
     config.setHorizonTime( horizon );
 
     double time_step = get_delta_max();
-    FINFO("main", "\tTime Step: " << time_step << " secs" );
+    LPT_INFO("main", "\tTime Step: " << time_step << " secs" );
     config.setTimeStep( time_step );
 
     double control_eps = get_delta_min();
-    FINFO("main", "\tControl Epsilon: " << control_eps << " secs");
-    config.setControlEpsilon( control_eps );
+    LPT_INFO("main", "\tControl Epsilon: " << control_eps << " secs");
+    // MRJ: Not used yet
+    // config.setControlEpsilon( control_eps );
 
-    FINFO("main", "\tLookahead Budget: " << get_budget() << " secs");
-    config.setBudget( get_budget() );
+    LPT_INFO("main", "\tLookahead Budget: " << get_budget() << " secs");
+    // MRJ: Not used yet
+    // config.setBudget( get_budget() );
 
-    bool retry_when_failed  = get_retry_when_failed();
-    FINFO( "main", "\tRetry when failed: " << (retry_when_failed ? "yes" : "no") );
-    config.setReTryWhenFailed( retry_when_failed );
+    LPT_INFO("main", "Planner configuration: " << std::endl << config);
 
-    FINFO( "main", "\tHeuristic Weight: " << config.getHeuristicWeight() );
-
-    FINFO("main", "Planner configuration: " << std::endl << config);
-
-    FINFO("main", "Indexing state variables..." );
+    LPT_INFO("main", "Indexing state variables..." );
     index_state_variables();
     _setup_time = aptk::time_used() - t0;
+
+    // Singleton management: note that we're not using the Lock class because
+    // the pointers are initialised during this method
+    _lang_info = fstrips::LanguageInfo::claimOwnership();
     _problem_info = ProblemInfo::claimOwnership();
     _problem = Problem::claimOwnership();
     _instance_config = Config::claimOwnership();
@@ -183,7 +206,7 @@ PythonRunner::solve() {
         std::string msg = "Run-time Error: Unsupported planning model requested: '";
         msg += config.getModelTag();
         msg += "''";
-        FINFO( "main", msg );
+        LPT_INFO( "main", msg );
         throw std::runtime_error(msg);
     }
     _search_time = aptk::time_used() - t0;
@@ -210,7 +233,7 @@ PythonRunner::export_plan( ) {
 void
 PythonRunner::solve_with_hybrid_planner() {
     Config& config = Config::instance();
-    FINFO( "main", "Starting Hybrid Planner...." << std::endl );
+    LPT_INFO( "main", "Starting Hybrid Planner...." << std::endl );
     fs0::HybridStateModel model(Problem::getInstance());
     auto creator = fs0::engines::EngineRegistry::instance().get(config.getEngineTag());
     auto engine = creator->create(config, model);
@@ -221,7 +244,7 @@ PythonRunner::solve_with_hybrid_planner() {
         msg += "'\n for planning model '";
         msg += config.getModelTag();
         msg += "'";
-        FINFO( "main", msg )
+        LPT_INFO( "main", msg )
         throw std::runtime_error(msg);
     }
     _native_plan.clear();
@@ -232,7 +255,7 @@ PythonRunner::solve_with_hybrid_planner() {
     bool valid = false;
     double validation_time = 0.0;
     _result = aptk::human_readable_result(engine->outcome);
-    FINFO( "main", "Result: " <<  _result << std::endl );
+    LPT_INFO( "main", "Result: " <<  _result << std::endl );
     while ( Config::instance().getReTryWhenFailed() &&
             (engine->outcome == aptk::HybridSearchAlgorithmResult::DeadEnd
             || engine->outcome == aptk::HybridSearchAlgorithmResult::TerminalNonGoal
@@ -242,9 +265,9 @@ PythonRunner::solve_with_hybrid_planner() {
         // 1/1000th time units is max precision
         if ( Dt <= Config::instance().getControlEpsilon() ) break;
 
-        FINFO( "main", "Search failed, trying with smaller time step");
+        LPT_INFO( "main", "Search failed, trying with smaller time step");
         double nextDt = Dt / 2.0;
-        FINFO( "main", "Current Delta Time: " << Dt << " next Delta Time: " << nextDt );
+        LPT_INFO( "main", "Current Delta Time: " << Dt << " next Delta Time: " << nextDt );
         Config::instance().setTimeStep( nextDt );
 
         t0 = aptk::time_used();
@@ -252,7 +275,7 @@ PythonRunner::solve_with_hybrid_planner() {
         total_time = aptk::time_used() - t0;
         accum_time += total_time;
         _result = aptk::human_readable_result(engine->outcome);
-        FINFO( "main", "Result: " << _result << std::endl );
+        LPT_INFO( "main", "Result: " << _result << std::endl );
     }
 
     std::ofstream json_out( get_output_dir() + "/results.json" );
@@ -311,17 +334,19 @@ PythonRunner::clear_plan() {
 
 void
 PythonRunner::solve_with_ompl_planner() {
+    throw std::runtime_error("OMPL Support is currently deactivated!");
+    /* MRJ: Deactivated for now
     float timer = 0.0;
     Config& config = Config::instance();
-    FINFO( "main", "Starting OMPL search engine...");
-    FINFO( "main", "Time out set to: " << get_timeout() << " secs");
+    LPT_INFO( "main", "Starting OMPL search engine...");
+    LPT_INFO( "main", "Time out set to: " << get_timeout() << " secs");
     auto theEngine = fs0::engines::ompl::DefaultEngine(config, Problem::getInstance());
 
     float t0 = aptk::time_used();
     theEngine.solve(get_timeout());
     timer = aptk::time_used() - t0;
-    FINFO( "main", "Elapsed Time: " << timer << " secs" << std::endl);
-    FINFO( "main", "Result: " << aptk::human_readable_result(theEngine._outcome) << std::endl );
+    LPT_INFO( "main", "Elapsed Time: " << timer << " secs" << std::endl);
+    LPT_INFO( "main", "Result: " << aptk::human_readable_result(theEngine._outcome) << std::endl );
 
     double validation_time = 0.0;
     bool valid = false;
@@ -370,6 +395,7 @@ PythonRunner::solve_with_ompl_planner() {
     json_out << std::endl;
     json_out << "}" << std::endl;
     json_out.close();
+    */
 
 }
 
@@ -382,11 +408,11 @@ PythonRunner::simulate_plan( double duration, double step_size ) {
 
 
     double sim_duration = std::min( duration, _plan_duration );
-    FINFO( "main", "Simulating plan for " << sim_duration << " time units");
+    LPT_INFO( "main", "Simulating plan for " << sim_duration << " time units");
 
     std::vector< State::ptr > trace;
     HybridChecker::simulatePlan( Problem::getInstance(),  _native_plan, *Problem::getInstance().getInitialState(), sim_duration, step_size, trace );
-    FINFO( "main", "Final simulation state: " << *trace.back() );
+    LPT_INFO( "main", "Final simulation state: " << *trace.back() );
 
     bp::list py_trace;
     const ProblemInfo& info = ProblemInfo::getInstance();
@@ -416,3 +442,5 @@ PythonRunner::simulate_plan( double duration, double step_size ) {
     _instance_config = Config::claimOwnership();
     return py_trace;
 }
+
+}}

@@ -4,7 +4,9 @@
 
 #include <fs_types.hxx>
 #include <problem.hxx>
+#include <fstrips/language_info.hxx>
 #include <search/runner.hxx>
+#include <search/options.hxx>
 #include <utils/config.hxx>
 #include <dynamics/hybrid_plan.hxx>
 // This include will dinamically point to the adequate per-instance automatically generated file
@@ -20,9 +22,14 @@ namespace fs0 {
 
 }
 
+namespace fs0 { namespace drivers {
+
+class SingletonLock;
+
 class PythonRunner {
 
 public:
+    friend class SingletonLock; // To help with the management of singletons
 
     //! The type of the concrete instance generator function
 	typedef std::function<void (const rapidjson::Document&, const std::string&)> ProblemGeneratorType;
@@ -73,10 +80,6 @@ public:
     //! budget - maximum number of states to be generated during search
     unsigned    get_budget( ) { return _budget; }
     void        set_budget( unsigned B) { _budget = B; }
-    //! retry_when_failed - if planner fails to find a plan, give it another
-    //! opportunity (used with randomised search algorithms)
-    bool        get_retry_when_failed( ) { return _retry_when_failed; }
-    void        set_retry_when_failed( bool retry_flag) { _retry_when_failed = retry_flag; }
     //! simulate_plan - simulates the plan found (useful for visualization and debugging)
     bp::list    simulate_plan( double duration, double step_size );
     double      get_simulation_time() { return _simulation_time; }
@@ -97,26 +100,30 @@ protected:
 private:
 
 
-    bp::list                        _plan;
-    fs0::dynamics::HybridPlan       _native_plan;
-    double                          _plan_duration;
-    double                          _setup_time;
-    double                          _search_time;
-    double                          _simulation_time;
-    std::string                     _result;
-    unsigned                        _timeout;
-    std::string                     _data_dir;
-	std::string                     _config;
-	std::string                     _output_dir;
-    double                          _time_step;
-    double                          _control_eps;
-    double                          _time_horizon;
-    unsigned                        _budget;
-    bool                            _retry_when_failed;
-	bool		                    _simulate_plan;
-	bool		                                 _verify_plan;
-    std::unique_ptr<fs0::ProblemInfo>            _problem_info;
-    std::unique_ptr<fs0::Problem>                _problem;
-    std::map< std::string, fs0::VariableIdx >    _var_index;
-    std::unique_ptr<fs0::Config>                _instance_config;
+    bp::list                                _plan;
+    dynamics::HybridPlan                    _native_plan;
+    EngineOptions                           _options;
+    double                                  _plan_duration;
+    double                                  _setup_time;
+    double                                  _search_time;
+    double                                  _simulation_time;
+    std::string                             _result;
+    unsigned                                _timeout;
+    std::string                             _data_dir;
+	std::string                             _config;
+	std::string                             _output_dir;
+    double                                  _time_step;
+    double                                  _control_eps;
+    double                                  _time_horizon;
+    unsigned                                _budget;
+	bool		                            _simulate_plan;
+	bool		                            _verify_plan;
+    std::unique_ptr<ProblemInfo>            _problem_info;
+    std::unique_ptr<fstrips::LanguageInfo>  _lang_info;
+    std::unique_ptr<Problem>                _problem;
+    std::map< std::string, VariableIdx >    _var_index;
+    std::unique_ptr<Config>                 _instance_config;
+    Driver*                                 _current_driver;
 };
+
+}} // namespace
