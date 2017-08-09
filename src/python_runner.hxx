@@ -6,6 +6,7 @@
 #include <problem.hxx>
 #include <search/runner.hxx>
 #include <utils/config.hxx>
+#include <dynamics/hybrid_plan.hxx>
 // This include will dinamically point to the adequate per-instance automatically generated file
 #include <boost/python.hpp>
 #include <lib/rapidjson/document.h>
@@ -96,23 +97,23 @@ protected:
 private:
 
 
-    bp::list             _plan;
-    fs0::HybridPlan      _native_plan;
-    double               _plan_duration;
-    double               _setup_time;
-    double               _search_time;
-    double               _simulation_time;
-    std::string          _result;
-    unsigned             _timeout;
-	std::string          _data_dir;
-	std::string          _config;
-	std::string          _output_dir;
-    double               _time_step;
-    double               _control_eps;
-    double               _time_horizon;
-    unsigned             _budget;
-    bool                 _retry_when_failed;
-	bool		         _simulate_plan;
+    bp::list                        _plan;
+    fs0::dynamics::HybridPlan       _native_plan;
+    double                          _plan_duration;
+    double                          _setup_time;
+    double                          _search_time;
+    double                          _simulation_time;
+    std::string                     _result;
+    unsigned                        _timeout;
+    std::string                     _data_dir;
+	std::string                     _config;
+	std::string                     _output_dir;
+    double                          _time_step;
+    double                          _control_eps;
+    double                          _time_horizon;
+    unsigned                        _budget;
+    bool                            _retry_when_failed;
+	bool		                    _simulate_plan;
 	bool		                                 _verify_plan;
     std::unique_ptr<fs0::ProblemInfo>            _problem_info;
     std::unique_ptr<fs0::Problem>                _problem;
