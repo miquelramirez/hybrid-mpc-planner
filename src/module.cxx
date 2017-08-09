@@ -1,6 +1,6 @@
 #include <python_runner.hxx>
 using namespace boost::python;
-
+using namespace fs0::drivers;
 
 BOOST_PYTHON_MODULE( libfs )
 {
@@ -26,7 +26,6 @@ BOOST_PYTHON_MODULE( libfs )
     .add_property( "delta_min", &PythonRunner::get_delta_min, &PythonRunner::set_delta_min)
     .add_property( "horizon", &PythonRunner::get_horizon, &PythonRunner::set_horizon)
     .add_property( "budget", &PythonRunner::get_budget, &PythonRunner::set_budget)
-    .add_property( "retry_when_failed", &PythonRunner::get_retry_when_failed, &PythonRunner::set_retry_when_failed)
     .add_property( "verify_plan", &PythonRunner::get_verify_plan, &PythonRunner::set_verify_plan)
 
     ; //! Note the semi colon!
