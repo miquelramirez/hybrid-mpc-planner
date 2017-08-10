@@ -7,9 +7,9 @@
 
 
 #include <problem.hxx>
+#include <problem_info.hxx>
 #include <search/drivers/sbfws/base.hxx>
 #include <search/drivers/sbfws/stats.hxx>
-#include <search/drivers/sbfws/relevant_atomset.hxx>
 #include <utils/printers/vector.hxx>
 #include <utils/printers/actions.hxx>
 #include <lapkt/search/components/open_lists.hxx>
@@ -24,7 +24,7 @@
 // For writing the R sets
 #include <utils/archive/json.hxx>
 
-namespace fs0 { namespace bfws {
+namespace fs0 { namespace lookahead {
 
 using FSFeatureValueT = lapkt::novelty::FeatureValueT;
 typedef lapkt::novelty::Width1Tuple<FSFeatureValueT> Width1Tuple;
@@ -33,10 +33,10 @@ typedef lapkt::novelty::Width2Tuple<FSFeatureValueT> Width2Tuple;
 typedef lapkt::novelty::Width2TupleHasher<FSFeatureValueT> Width2TupleHasher;
 
 template <typename StateT, typename ActionType>
-class MultiValuedIWRunNode {
+class IWNode {
 public:
 	using ActionT = ActionType;
-	using PT = std::shared_ptr<MultiValuedIWRunNode<StateT, ActionT>>;
+	using PT = std::shared_ptr<IWNode<StateT, ActionT>>;
 
 	//! The state in this node
 	StateT state;
@@ -53,30 +53,32 @@ public:
 	//! The novelty  of the state
 	unsigned char _w;
 
-	std::vector<std::pair<Width1Tuple, Width1Tuple>> _nov2_pairs;
+    //! Reward
+    float R;
 
 	//! The generation order, uniquely identifies the node
 	//! NOTE We're assuming we won't generate more than 2^32 ~ 4.2 billion nodes.
 	uint32_t _gen_order;
 
 
-	MultiValuedIWRunNode() = default;
-	~MultiValuedIWRunNode() = default;
-	MultiValuedIWRunNode(const MultiValuedIWRunNode&) = default;
-	MultiValuedIWRunNode(MultiValuedIWRunNode&&) = delete;
-	MultiValuedIWRunNode& operator=(const MultiValuedIWRunNode&) = delete;
-	MultiValuedIWRunNode& operator=(MultiValuedIWRunNode&&) = delete;
+	IWNode() = default;
+	~IWNode() = default;
+	IWNode(const IWNode&) = default;
+	IWNode(IWNode&&) = delete;
+	IWNode& operator=(const IWNode&) = delete;
+	IWNode& operator=(IWNode&&) = delete;
 
 	//! Constructor with full copying of the state (expensive)
-	MultiValuedIWRunNode(const StateT& s, unsigned long gen_order) : MultiValuedIWRunNode(StateT(s), ActionT::invalid_action_id, nullptr, gen_order) {}
+	IWNode(const StateT& s, unsigned long gen_order) : IWNode(StateT(s), ActionT::invalid_action_id, nullptr, gen_order) {}
 
 	//! Constructor with move of the state (cheaper)
-	MultiValuedIWRunNode(StateT&& _state, typename ActionT::IdType _action, PT _parent, uint32_t gen_order) :
+	IWNode(StateT&& _state, typename ActionT::IdType _action, PT _parent, uint32_t gen_order) :
 		state(std::move(_state)),
 		action(_action),
 		parent(_parent),
 		g(parent ? parent->g+1 : 0),
 		_w(std::numeric_limits<unsigned char>::max()),
+        R(0.0f),
 		_gen_order(gen_order)
 	{
 		assert(_gen_order > 0); // Very silly way to detect overflow, in case we ever generate > 4 billion nodes :-)
@@ -86,12 +88,13 @@ public:
 	bool has_parent() const { return parent != nullptr; }
 
 	//! Print the node into the given stream
-	friend std::ostream& operator<<(std::ostream &os, const MultiValuedIWRunNode<StateT, ActionT>& object) { return object.print(os); }
+	friend std::ostream& operator<<(std::ostream &os, const IWNode<StateT, ActionT>& object) { return object.print(os); }
 	std::ostream& print(std::ostream& os) const {
 		os << "{@ = " << this;
 		os << ", #=" << _gen_order ;
 		os << ", s = " << state ;
 		os << ", g=" << g ;
+        os << ", R=" << R ;
 		os << ", w=" << (_w == std::numeric_limits<unsigned char>::max() ? "INF" : std::to_string(_w));
 
 		os << ", act=" << action ;
@@ -99,14 +102,14 @@ public:
 		return os;
 	}
 
-	bool operator==( const MultiValuedIWRunNode<StateT, ActionT>& o ) const { return state == o.state; }
+	bool operator==( const IWNode<StateT, ActionT>& o ) const { return state == o.state; }
 
 	std::size_t hash() const { return state.hash(); }
 };
 
 
 template <typename NodeT, typename FeatureSetT, typename NoveltyEvaluatorT>
-class MultiValuedSimulationEvaluator {
+class LazyEvaluator {
 protected:
 	//! The set of features used to compute the novelty
 	const FeatureSetT& _features;
@@ -118,12 +121,12 @@ public:
 
     typedef typename NoveltyEvaluatorT::ValuationT ValuationT;
 
-	MultiValuedSimulationEvaluator(const FeatureSetT& features, NoveltyEvaluatorT* evaluator) :
+	LazyEvaluator(const FeatureSetT& features, NoveltyEvaluatorT* evaluator) :
 		_features(features),
 		_evaluator(evaluator)
 	{}
 
-	~MultiValuedSimulationEvaluator() = default;
+	~LazyEvaluator() = default;
 
 	//! Returns false iff we want to prune this node during the search
 	unsigned evaluate(NodeT& node) {
@@ -164,16 +167,17 @@ template <typename NodeT,
           typename NoveltyEvaluatorT,
 		  typename FeatureSetT
 >
-class MultiValuedIWRun
+class IW
 {
 public:
 	using ActionT = typename StateModel::ActionType;
 	using StateT = typename StateModel::StateT;
 
 	using ActionIdT = typename StateModel::ActionType::IdType;
+    using PlanT =  std::vector<ActionIdT>;
 	using NodePT = std::shared_ptr<NodeT>;
 
-	using SimEvaluatorT = MultiValuedSimulationEvaluator<NodeT, FeatureSetT, NoveltyEvaluatorT>;
+	using SimEvaluatorT = LazyEvaluator<NodeT, FeatureSetT, NoveltyEvaluatorT>;
 
 	using FeatureValueT = typename NoveltyEvaluatorT::FeatureValueT;
 
@@ -192,18 +196,6 @@ public:
 		//! Whether to extract goal-informed relevant sets R
 		bool _goal_directed;
 
-		//!
-		bool _force_adaptive_run;
-
-		//!
-		bool _force_R_all;
-
-		//!
-		bool _r_g_prime;
-
-		//!
-		unsigned _gr_actions_cutoff;
-
 		//! Enforce state constraints
 		bool _enforce_state_constraints;
 
@@ -216,19 +208,15 @@ public:
 		//! Log search
 		bool _log_search;
 
-		Config(bool complete, bool mark_negative, unsigned max_width, const fs0::Config& global_config) :
+		Config(bool complete, unsigned max_width, const fs0::Config& global_config) :
 			_complete(complete),
 			_max_width(max_width),
 			_global_config(global_config),
-			_goal_directed(global_config.getOption<bool>("sim.goal_directed", false)),
-			_force_adaptive_run(global_config.getOption<bool>("sim.hybrid", false)),
-			_force_R_all(global_config.getOption<bool>("sim.r_all", false)),
-			_r_g_prime(global_config.getOption<bool>("sim.r_g_prime", false)),
-			_gr_actions_cutoff(global_config.getOption<unsigned>("sim.act_cutoff", std::numeric_limits<unsigned>::max())),
-			_enforce_state_constraints(global_config.getOption<bool>("sim.enforce_state_constraints", false)),
-			_R_file(global_config.getOption<std::string>("sim.from_file", "")),
-			_filter_R_set(global_config.getOption<bool>("sim.filter", false)),
-			_log_search(global_config.getOption<bool>("sim.log", false))
+			_goal_directed(global_config.getOption<bool>("lookahead.iw.goal_directed", false)),
+			_enforce_state_constraints(global_config.getOption<bool>("lookahead.iw.enforce_state_constraints", true)),
+			_R_file(global_config.getOption<std::string>("lookahead.iw.from_file", "")),
+			_filter_R_set(global_config.getOption<bool>("lookahead.iw.filter", false)),
+			_log_search(global_config.getOption<bool>("lookahead.iw.log", false))
 		{}
 	};
 
@@ -238,6 +226,9 @@ protected:
 
 	//! The simulation configuration
 	Config _config;
+
+    //! Best node found
+	NodePT _best_node;
 
 	//!
 	std::vector<NodePT> _optimal_paths;
@@ -260,7 +251,7 @@ protected:
 	uint32_t _w_gt2_nodes_generated;
 
 	//! The general statistics of the search
-	BFWSStats& _stats;
+	bfws::BFWSStats& _stats;
 
 	//! Whether to print some useful extra information or not
 	bool _verbose;
@@ -271,9 +262,10 @@ protected:
 public:
 
 	//! Constructor
-	MultiValuedIWRun(const StateModel& model, const FeatureSetT& featureset, NoveltyEvaluatorT* evaluator, const MultiValuedIWRun::Config& config, BFWSStats& stats, bool verbose) :
+	IW(const StateModel& model, const FeatureSetT& featureset, NoveltyEvaluatorT* evaluator, const IW::Config& config, bfws::BFWSStats& stats, bool verbose) :
 		_model(model),
 		_config(config),
+        _best_node(nullptr),
 		_optimal_paths(model.num_subgoals()),
 		_unreached(),
 		_in_seed(),
@@ -298,85 +290,17 @@ public:
 		_w1_nodes_generated = 0;
 		_w2_nodes_generated = 0;
 		_w_gt2_nodes_generated = 0;
+        _best_node = nullptr;
 		_evaluator.reset();
 	}
 
-	~MultiValuedIWRun() = default;
+	~IW() = default;
 
 	// Disallow copy, but allow move
-	MultiValuedIWRun(const MultiValuedIWRun&) = delete;
-	MultiValuedIWRun(MultiValuedIWRun&&) = default;
-	MultiValuedIWRun& operator=(const MultiValuedIWRun&) = delete;
-	MultiValuedIWRun& operator=(MultiValuedIWRun&&) = default;
-
-
-	//! Mark all tuples in the path to some goal. 'seed_nodes' contains all nodes satisfying some subgoal.
-	void mark_tuples_in_path_to_subgoal(const std::vector<NodePT>& seed_nodes, std::unordered_set<Width1Tuple,Width1TupleHasher>& tuples) const {
-		std::unordered_set<NodePT> all_visited;
-
-		for (NodePT node:seed_nodes) {
-
-			NodePT root = node;
-			// We ignore s0
-			while (node->has_parent()) {
-				// If the node has already been processed, no need to do it again, nor to process the parents,
-				// which will necessarily also have been processed.
-				auto res = all_visited.insert(node);
-				if (!res.second) break;
-
-				const StateT& state = node->state;
-				const StateT& parent_state = node->parent->state;
-				_unused(state);
-                const FeatureSetT& phi = _evaluator.feature_set();
-                typename SimEvaluatorT::ValuationT parent_phi_S = phi.evaluate(parent_state);
-                typename SimEvaluatorT::ValuationT phi_S = phi.evaluate(state);
-
-				for (const auto& p_q : node->_nov2_pairs) {
-                    Width1Tuple p, q;
-                    std::tie(p,q) = p_q;
-
-                    assert( phi_S[p.first] == p.second );
-                    assert( phi_S[q.first] == q.second );
-                    assert( parent_phi_S[p.first] == p.second);
-                    assert( parent_phi_S[q.first] == p.second);  // Otherwise the tuple couldn't be new
-
-                    if ( parent_phi_S[p.first] == p.second ) {
-                        tuples.insert(p);
-                    } else if ( parent_phi_S[q.first] == q.second ) {
-                        tuples.insert(q);
-                    } else {
-                        tuples.insert(p);
-                        tuples.insert(q);
-                    }
-				}
-				node = node->parent;
-			}
-		}
-	}
-
-	std::unordered_set<Width1Tuple,Width1TupleHasher> mark_all_tuples_in_path_to_subgoal(const std::vector<NodePT>& seed_nodes) const {
-		std::unordered_set<Width1Tuple,Width1TupleHasher> tuples;
-		std::unordered_set<NodePT> all_visited;
-
-		for (NodePT node:seed_nodes) {
-			// We ignore s0
-			while (node->has_parent()) {
-				// If the node has already been processed, no need to do it again, nor to process the parents,
-				// which will necessarily also have been processed.
-				auto res = all_visited.insert(node);
-				if (!res.second) break;
-
-				const StateT& state = node->state;
-                const FeatureSetT& phi = _evaluator.feature_set();
-                typename SimEvaluatorT::ValuationT phi_S = phi.evaluate(state);
-                for ( unsigned k = 0; k < phi_S.size(); k++ )
-                    tuples.insert(Width1Tuple(k,phi_S[k]));
-
-				node = node->parent;
-			}
-		}
-		return tuples;
-	}
+	IW(const IW&) = delete;
+	IW(IW&&) = default;
+	IW& operator=(const IW&) = delete;
+	IW& operator=(IW&&) = default;
 
 	void report_simulation_stats(float simt0) {
 		_stats.simulation();
@@ -384,427 +308,6 @@ public:
 		_stats.sim_add_expanded_nodes(_w1_nodes_expanded+_w2_nodes_expanded);
 		_stats.sim_add_generated_nodes(_w1_nodes_generated+_w2_nodes_generated+_w_gt2_nodes_generated);
 		_stats.reachable_subgoals( _model.num_subgoals() - _unreached.size());
-	}
-
-	std::vector<Width1Tuple> compute_R_all() {
-        std::vector<Width1Tuple> dummy;
-        throw std::runtime_error("Multi Valued IW Simulation: R_All is not well defined");
-        return dummy;
-	}
-
-	std::vector<Width1Tuple> compute_R(const StateT& seed) {
-
-		if ( !_config._R_file.empty() ) {
-			std::vector<Width1Tuple> R;
-			load_R_set( _config._R_file, R);
-			LPT_INFO("cout", "Simulation - R set has been loaded from a given file: " << _config._R_file );
-			LPT_INFO("cout", "\t Loaded " << R.size() << " entries from file...");
-			return R;
-		}
-
-		if (_config._force_R_all) {
-			if (_verbose) LPT_INFO("cout", "Simulation - R=R[All] is the user-preferred option");
-			return compute_R_all();
-		}
-
-		if (_config._r_g_prime) {
-			if (_verbose) LPT_INFO("cout", "Simulation - R=R'_G is the user-preferred option");
-			return compute_R_g_prime(seed);
-		}
-
-		if (_config._force_adaptive_run) {
-			return compute_adaptive_R(seed);
-		} else if (_config._max_width == 1){
-			return compute_plain_R1(seed);
-		} else if (_config._max_width == 2){
-			return compute_plain_RG2(seed);
-		} else {
-			throw std::runtime_error("Simulation max_width too high");
-		}
-	}
-
-	std::vector<Width1Tuple> compute_plain_RG2(const StateT& seed) {
-		assert(_config._max_width == 2);
-		/*
-		LPT_INFO( "cout", "s0: " << seed );
-		std::unordered_set<Width1Tuple,Width1TupleHasher> the_R;
-		float simt0 = aptk::time_used();
-		for (const auto& a : _model.applicable_actions(seed, _config._enforce_state_constraints)) {
-			LPT_INFO("cout", "action: " << _model.getTask().getGroundActions()[_model.get_action_idx(a)]->getName());
-			StateT s_a = _model.next( seed, a );
-			LPT_INFO("cout", "s_a: " << s_a );
-			run(s_a, _config._max_width);
-			report_simulation_stats(simt0);
-
-			if (_config._goal_directed && _unreached.size() == 0) {
-				LPT_INFO("cout", "Simulation - IW(" << _config._max_width << ") reached all subgoals, computing R_G[" << _config._max_width << "]");
-				auto R_a =  extract_R_G(false);
-				for ( auto t : R_a )
-					the_R.insert(t);
-			}
-
-			// Else, compute the goal-unaware version of R containing all atoms seen during the IW run
-			auto R_a = extract_R_1();
-			for ( auto t : R_a )
-				the_R.insert(t);
-
-			_evaluator.reset();
-		}
-
-		std::vector<Width1Tuple> R1(the_R.begin(),the_R.end());
-		LPT_INFO( "cout", "Simulation - Combined |R| = " << R1.size() );
-		return R1;
-		*/
-		_config._complete = false;
-		float simt0 = aptk::time_used();
-  		run(seed, _config._max_width);
-		report_simulation_stats(simt0);
-		if (_config._goal_directed && _unreached.size() == 0) {
-			LPT_INFO("cout", "Simulation - IW(" << _config._max_width << ") run reached " << _model.num_subgoals() - _unreached.size() << " goals");
-			return extract_R_G(false);
-		}
-		// Else, compute the goal-unaware version of R containing all atoms seen during the IW run
-		return extract_R_1();
-
-	}
-
-
-	std::vector<Width1Tuple> compute_plain_R1(const StateT& seed) {
-		assert(_config._max_width == 1);
-		_config._complete = false;
-		float simt0 = aptk::time_used();
-		/*
-		LPT_INFO( "cout", "s0: " << seed );
-		std::unordered_set<Width1Tuple,Width1TupleHasher> the_R;
-
-		for (const auto& a : _model.applicable_actions(seed, _config._enforce_state_constraints)) {
-			LPT_INFO("cout", "action: " << _model.getTask().getGroundActions()[_model.get_action_idx(a)]->getName());
-			StateT s_a = _model.next( seed, a );
-			LPT_INFO("cout", "s_a: " << s_a );
-			run(s_a, _config._max_width);
-			report_simulation_stats(simt0);
-
-			if (_config._goal_directed && _unreached.size() == 0) {
-				LPT_INFO("cout", "Simulation - IW(" << _config._max_width << ") reached all subgoals, computing R_G[" << _config._max_width << "]");
-				auto R_a =  extract_R_G_1();
-				for ( auto t : R_a )
-					the_R.insert(t);
-			}
-
-			// Else, compute the goal-unaware version of R containing all atoms seen during the IW run
-			auto R_a = extract_R_1();
-			for ( auto t : R_a )
-				the_R.insert(t);
-
-			_evaluator.reset();
-		}
-
-		std::vector<Width1Tuple> R1(the_R.begin(),the_R.end());
-		LPT_INFO( "cout", "Simulation - Combined |R| = " << R1.size() );
-		return R1;
-		*/
-
-  		run(seed, _config._max_width);
-		report_simulation_stats(simt0);
-
-		if (_config._goal_directed && _unreached.size() == 0) {
-			LPT_INFO("cout", "Simulation - IW(" << _config._max_width << ") reached all subgoals, computing R_G[" << _config._max_width << "]");
-			return extract_R_G_1();
-		}
-
-		// Else, compute the goal-unaware version of R containing all atoms seen during the IW run
-		return extract_R_1();
-
-	}
-
-	// MRJ: This is not very useful at the moment, since we do really need to map the
-	// floating point numbers exactly back from the file... which
-	// means than otherwise than the number 0.0 (or numbers very close to
-	// it) we can't find a match on loaded R set.
-	template <typename Container>
-	void load_R_set( std::string filename, Container& R ) {
-		using namespace rapidjson;
-		//const ProblemInfo& info = ProblemInfo::getInstance();
-		FILE* fp = fopen(filename.c_str(), "rb"); // non-Windows use "r"
-		char readBuffer[65536];
-		FileReadStream is(fp, readBuffer, sizeof(readBuffer));
-		if (fp == nullptr ) {
-			throw std::runtime_error("MultiValuedIWRun::load_R_set: Failed to open file '" + filename + "'");
-		}
-        Document R_set;
-		R_set.ParseStream(is);
-		fclose(fp);
-
-		const Value& tuples = R_set["elements"];
-		assert(tuples.IsArray());
-		for (SizeType i = 0; i < tuples.Size(); i++) {// Uses SizeType instead of size_t
-			// MRJ: input file format consists of feature index and feature (raw) value
-			unsigned feature_index = tuples[i][0].GetInt();
-			FSFeatureValueT feature_value = tuples[i][1].GetInt();
-			Width1Tuple t_i( feature_index, feature_value );
-			R.push_back(t_i);
-		}
-	}
-
-	void filter_R_set( const std::vector<Width1Tuple>& R, std::vector<Width1Tuple>& filtered_R ) {
-		GoalBallFilter filter;
-
-		for ( Width1Tuple f : R) {
-			unsigned j;
-			int v;
-			std::tie(j,v) = f;
-
-			auto phi = dynamic_cast<const StateVariableFeature*>(_evaluator.feature_set().at(j));
-			if ( phi == nullptr ) {// not a state variable feature
-				filtered_R.push_back(f);
-				continue;
-			}
-			object_id o = make_object(phi->codomain(), v);
-			if ( o_type(o) != type_id::int_t && o_type(o) != type_id::float_t ) { // not a feature we know how to filter
-				filtered_R.push_back(f);
-				continue;
-			}
-			auto scope = phi->scope();
-
-			filter.add_sample( j, scope[0], o );
-		}
-		filter.filter_samples();
-		filter.get_filtered_set<std::vector<Width1Tuple>, FSFeatureValueT >(filtered_R);
-	}
-
-	std::vector<Width2Tuple>
-	compute_coupled_features(const std::vector<Width1Tuple>& R) {
-		GoalBallFilter filter;
-
-		for ( Width1Tuple f : R) {
-			unsigned j;
-			int v;
-			std::tie(j,v) = f;
-
-			auto phi = dynamic_cast<const StateVariableFeature*>(_evaluator.feature_set().at(j));
-			if ( phi == nullptr ) {// not a state variable feature
-				continue;
-			}
-			object_id o = make_object(phi->codomain(), v);
-			if ( o_type(o) != type_id::int_t && o_type(o) != type_id::float_t ) { // not a feature we know how to filter
-				continue;
-			}
-			auto scope = phi->scope();
-
-			filter.add_sample( j, scope[0], o );
-		}
-		filter.filter_samples();
-		std::vector<Width2Tuple> coupled;
-		filter.get_output<std::vector<Width2Tuple>, FSFeatureValueT >(coupled);
-		return coupled;
-	}
-
-	template <typename Container>
-	void dump_R_set( const Container& R, std::string filename ) {
-		using namespace rapidjson;
-
-		const ProblemInfo& info = ProblemInfo::getInstance();
-        Document R_set;
-        Document::AllocatorType& allocator = R_set.GetAllocator();
-        R_set.SetObject();
-        Value domainName;
-        domainName.SetString(StringRef(info.getDomainName().c_str()));
-        R_set.AddMember("domain", domainName.Move(), allocator );
-        Value instanceName;
-        instanceName.SetString(StringRef(info.getInstanceName().c_str()));
-        R_set.AddMember("instance", instanceName.Move(), allocator );
-
-		Value elements(kArrayType);
-        {
-			for ( Width1Tuple f : R) {
-				unsigned j;
-				int v;
-				std::tie(j,v) = f;
-
-				auto phi = dynamic_cast<const Feature*>(_evaluator.feature_set().at(j));
-
-				// MRJ: State variable features always come first
-
-				auto scope = phi->scope();
-				if (scope.empty()) continue; // Scope not available for this feature
-
-				Value entry(kArrayType); {
-
-					if ( scope.size() == 1 ) {
-						Value name;
-                        name.SetString( StringRef( info.getVariableName(scope[0]).c_str() ));
-						entry.PushBack(name.Move(),allocator);
-					} else {
-						Value tuple(kArrayType);{
-							for ( unsigned l = 0; l < scope.size(); l++ ) {
-								Value name;
-		                        name.SetString( StringRef( info.getVariableName(scope[l]).c_str() ));
-								tuple.PushBack(name.Move(),allocator);
-							}
-						}
-						entry.PushBack(tuple.Move(),allocator);
-					}
-					Value feature_id(j);
-					entry.PushBack(feature_id.Move(),allocator);
-					Value value;
-					object_id o = make_object(phi->codomain(), v);
-					if ( o_type(o) == type_id::bool_t )
-						value = Value( fs0::value<bool>(o) );
-					else if ( o_type(o) == type_id::int_t )
-						value = Value( fs0::value<int>(o) );
-					else if ( o_type(o) == type_id::float_t )
-						value = Value( fs0::value<float>(o) );
-					else {
-						std::string _literal = info.object_name(o);
-						value.SetString( _literal.c_str(), _literal.size(), allocator ) ;
-					}
-					entry.PushBack(value.Move(),allocator);
-					Value raw_value(v);
-					entry.PushBack(raw_value.Move(),allocator);
-
-				}
-				elements.PushBack(entry.Move(), allocator);
-			}
-        }
-        R_set.AddMember("elements", elements, allocator);
-
-		FILE* fp = fopen(filename.c_str(), "wb"); // non-Windows use "w"
-        char writeBuffer[65536];
-        FileWriteStream os(fp, writeBuffer, sizeof(writeBuffer));
-        Writer<FileWriteStream> writer(os);
-        R_set.Accept(writer);
-        fclose(fp);
-	}
-
-	std::vector<Width1Tuple> extract_R_1() {
-		std::vector<Width1Tuple> R = _evaluator.reached_tuples();
-		LPT_INFO("cout", "Simulation - IW(" << _config._max_width << ") run reached " << _model.num_subgoals() - _unreached.size() << " goals");
-		if (_verbose) {
-			unsigned c = R.size();
-			LPT_INFO("cout", "Simulation - |R[1]| = " << c);
-			_stats.relevant_atoms(c);
-			dump_R_set( R, "R1.set.json");
-
-		}
-		return R;
-	}
-
-	std::vector<Width1Tuple> compute_R_g_prime(const StateT& seed) {
-		_config._complete = false;
-
-
-		float simt0 = aptk::time_used();
-  		run(seed, 1);
-		report_simulation_stats(simt0);
-
-		if (_unreached.size() == 0) {
-			std::vector<NodePT> seed_nodes = extract_seed_nodes();
-			std::unordered_set<Width1Tuple,Width1TupleHasher> R_G = mark_all_tuples_in_path_to_subgoal(seed_nodes);
-			unsigned R_G_size = R_G.size();
-			LPT_INFO("cout", "Simulation - IW(1) run reached all goals");
-			LPT_INFO("cout", "Simulation - |R_G'[1]| = " << R_G_size << " (computed from " << seed_nodes.size() << " subgoal-reaching nodes)");
-			_stats.relevant_atoms(R_G_size);
-			dump_R_set( R_G, "RGprime1.set.json");
-			return std::vector<Width1Tuple>(R_G.begin(),R_G.end());
-
-		}
-
-		LPT_INFO("cout", "Simulation - IW(1) run did not reach all goals, throwing IW(2) simulation");
-
-
-		if (_config._gr_actions_cutoff < std::numeric_limits<unsigned>::max()) {
-			unsigned num_actions = Problem::getInstance().getGroundActions().size();
-			if (num_actions > _config._gr_actions_cutoff) { // Too many actions to compute IW(º2)
-				LPT_INFO("cout", "Simulation - Number of actions (" << num_actions << " > " << _config._gr_actions_cutoff << ") considered too high to run IW(2).");
-				return compute_R_all();
-			} else {
-				LPT_INFO("cout", "Simulation - Number of actions (" << num_actions << " <= " << _config._gr_actions_cutoff << ") considered low enough to run IW(2).");
-			}
-		}
-
-		reset();
-		run(seed, 2);
-		report_simulation_stats(simt0);
-		_stats.reachable_subgoals( _model.num_subgoals() - _unreached.size());
-
-		if (_unreached.size() != 0 )
-			LPT_INFO("cout", "Simulation - IW(2) run did not reach all goals");
-		if (_unreached.empty())
-			LPT_INFO("cout", "Simulation - IW(2) run reached all goals");
-
-		std::vector<NodePT> seed_nodes = extract_seed_nodes();
-		std::unordered_set<Width1Tuple,Width1TupleHasher> R_G = mark_all_tuples_in_path_to_subgoal(seed_nodes);
-		unsigned R_G_size = R_G.size();
-
-		LPT_INFO("cout", "Simulation - |R_G'[2]| = " << R_G_size << " (computed from " << seed_nodes.size() << " subgoal-reaching nodes)");
-		_stats.relevant_atoms(R_G_size);
-		dump_R_set( R_G, "RGprime2.set.json");
-		return std::vector<Width1Tuple>(R_G.begin(),R_G.end());
-	}
-
-
-
-	std::vector<Width1Tuple> compute_adaptive_R(const StateT& seed) {
-		_config._complete = false;
-
-
-		float simt0 = aptk::time_used();
-  		run(seed, 1);
-		report_simulation_stats(simt0);
-
-		if (_unreached.size() == 0) {
-			// If a single IW[1] run reaches all subgoals, we return R=emptyset
-			LPT_INFO("cout", "Simulation - IW(1) run reached all goals, thus R={}");
-			_stats.r_type(0);
-			return std::vector<Width1Tuple>();
-		} else {
-			LPT_INFO("cout", "Simulation - IW(1) run did not reach all goals, throwing IW(2) simulation");
-		}
-
-		// Otherwise, run IW(2)
-		reset();
-		run(seed, 2);
-		report_simulation_stats(simt0);
-		_stats.reachable_subgoals( _model.num_subgoals() - _unreached.size());
-
-		return extract_R_G(false);
-	}
-
-	//! Extracts the goal-oriented set of relevant atoms after a simulation run
-	std::vector<Width1Tuple> extract_R_G(bool r_all_fallback) {
-
-		if (r_all_fallback) {
-			unsigned num_subgoals = _model.num_subgoals();
-			unsigned initially_reached = std::count(_in_seed.begin(), _in_seed.end(), true);
-			unsigned reached_by_simulation = num_subgoals - _unreached.size() - initially_reached;
-			if (_verbose) LPT_INFO("cout", "Simulation - " << reached_by_simulation << " subgoals were newly reached by the simulation.");
-			bool decide_r_all = (reached_by_simulation < (0.5*num_subgoals));
-			decide_r_all = _unreached.size() != 0; // XXX Use R_All is any non-reached
-			if (decide_r_all) {
-				if (_verbose) LPT_INFO("cout", "Simulation - Falling back to R=R[All]");
-				_stats.r_type(1);
-				return compute_R_all();
-			} else {
-				if (_verbose) LPT_INFO("cout", "Simulation - Computing R_G");
-			}
-		}
-
-
-		std::vector<NodePT> seed_nodes = extract_seed_nodes();
-		std::unordered_set<Width1Tuple,Width1TupleHasher> R_G;
-		mark_tuples_in_path_to_subgoal(seed_nodes, R_G);
-
-		unsigned R_G_size = R_G.size();
-		if (_verbose) {
-			LPT_INFO("cout", "Simulation - |R_G[" << _config._max_width << "]| = " << R_G_size << " (computed from " << seed_nodes.size() << " subgoal-reaching nodes)");
-
-		}
-		_stats.relevant_atoms(R_G_size);
-		_stats.r_type(2);
-		std::stringstream ss;
-		ss << "RG" << _config._max_width << ".set.json";
-		dump_R_set( R_G, ss.str());
-		return std::vector<Width1Tuple>(R_G.begin(),R_G.end());
 	}
 
 	std::vector<NodePT> extract_seed_nodes() {
@@ -816,69 +319,6 @@ public:
 		}
 		return seed_nodes;
 	}
-
-	std::vector<Width1Tuple> extract_R_G_1() {
-		std::vector<NodePT> seed_nodes = extract_seed_nodes();
-		std::unordered_set<Width1Tuple,Width1TupleHasher> R_G = mark_all_tuples_in_path_to_subgoal(seed_nodes);
-
-		unsigned R_G_size = R_G.size();
-		if (_verbose) {
-			LPT_INFO("cout", "Simulation - |R_G[" << _config._max_width << "]| = " << R_G_size << " (computed from " << seed_nodes.size() << " subgoal-reaching nodes)");
-		}
-		_stats.relevant_atoms(R_G_size);
-		_stats.r_type(2);
-		dump_R_set( R_G, "RG1.set.json");
-		return std::vector<Width1Tuple>(R_G.begin(), R_G.end());
-	}
-
-
-
-// 	std::vector<AtomIdx> _compute_R(const StateT& seed) {
-
-// 		_config._complete = false;
-//
-// 		float simt0 = aptk::time_used();
-//  		run(seed);
-// 		_stats.simulation();
-// 		_stats.sim_add_time(aptk::time_used() - simt0);
-// 		_stats.sim_add_expanded_nodes(_w1_nodes_expanded+_w2_nodes_expanded);
-// 		_stats.sim_add_generated_nodes(_w1_nodes_generated+_w2_nodes_generated+_w_gt2_nodes_generated);
-// 		_stats.reachable_subgoals(_model.num_subgoals() - _unreached.size());
-
-// 		std::vector<NodePT> w1_goal_reaching_nodes;
-// 		std::vector<NodePT> w2_goal_reaching_nodes;
-// 		std::vector<NodePT> wgt2_goal_reaching_nodes;
-
-
-		/*
-		LPT_INFO("cout", "Simulation - Number of novelty-1 nodes: " << _w1_nodes.size());
-		LPT_INFO("cout", "Simulation - Number of novelty=1 nodes expanded in the simulation: " << _w1_nodes_expanded);
-		LPT_INFO("cout", "Simulation - Number of novelty=2 nodes expanded in the simulation: " << _w2_nodes_expanded);
-		LPT_INFO("cout", "Simulation - Number of novelty=1 nodes generated in the simulation: " << _w1_nodes_generated);
-		LPT_INFO("cout", "Simulation - Number of novelty=2 nodes generated in the simulation: " << _w2_nodes_generated);
-		LPT_INFO("cout", "Simulation - Number of novelty>2 nodes generated in the simulation: " << _w_gt2_nodes_generated);
-		LPT_INFO("cout", "Simulation - Total number of generated nodes (incl. pruned): " << _generated);
-		LPT_INFO("cout", "Simulation - Number of seed novelty-1 nodes: " << w1_seed_nodes.size());
-		*/
-
-// 		auto relevant_w2_nodes = compute_relevant_w2_nodes();
-// 		LPT_INFO("cout", "Simulation - Number of relevant novelty-2 nodes: " << relevant_w2_nodes.size());
-
-// 		auto su = compute_union(relevant_w2_nodes); // Order matters!
-// 		auto hs = compute_hitting_set(relevant_w2_nodes);
-
-// 		LPT_INFO("cout", "Simulation - union-based R (|R|=" << su.size() << ")");
-// 		_print_atomset(su);
-
-// 		LPT_INFO("cout", "Simulation - hitting-set-based-based R (|R|=" << hs.size() << ")");
-// 		_print_atomset(hs);
-
-		//std::vector<AtomIdx> relevant(hs.begin(), hs.end());
-// 		std::vector<AtomIdx> relevant(su.begin(), su.end());
-// 		std::sort(relevant.begin(), relevant.end());
-// 		return relevant;
-// 		return {};
-// 	}
 
 	class DeactivateZCC {
 		bool _current_setting;
@@ -892,6 +332,35 @@ public:
 			fs0::Config::instance().setZeroCrossingControl(_current_setting);
 		}
 	};
+
+    //! Convenience method
+	bool solve_model(PlanT& solution) { return search(_model.init(), solution); }
+
+	bool search(const StateT& s, PlanT& plan) {
+        _best_node = nullptr; // Make sure we start assuming no solution found
+
+        run(s, _config._max_width);
+
+
+		return extract_plan( _best_node, plan);
+	}
+
+    //! Returns true iff there is an actual plan (i.e. because the given solution node is non-null)
+    bool extract_plan(const NodePT& solution_node, PlanT& plan) const {
+        if (!solution_node) return false;
+        assert(plan.empty());
+
+        NodePT node = solution_node;
+
+        while (node->parent) {
+            plan.push_back(node->action);
+            node = node->parent;
+        }
+
+        std::reverse(plan.begin(), plan.end());
+        return true;
+    }
+
 
 	bool run(const StateT& seed, unsigned max_width) {
 		if (_verbose) LPT_INFO("cout", "Simulation - Starting IW Simulation");
@@ -913,6 +382,7 @@ public:
 
 		assert(max_width <= 2); // The current swapping-queues method works only for up to width 2, but is trivial to generalize if necessary
 
+        _best_node = root;
 		OpenListT open_w1, open_w2;
 		OpenListT open_w1_next, open_w2_next; // The queues for the next depth level.
 
@@ -1054,6 +524,8 @@ protected:
 			unsigned subgoal_idx = *it;
 
 			if (_model.goal(state, subgoal_idx)) {
+                // MRJ: Reward function
+                node->R += 1.0;
 // 				node->satisfies_subgoal = true;
 // 				_all_paths[subgoal_idx].push_back(node);
 				if (!_optimal_paths[subgoal_idx]) _optimal_paths[subgoal_idx] = node;
@@ -1062,6 +534,9 @@ protected:
 				++it;
 			}
 		}
+
+        update_best_node( node );
+
 		// As soon as all nodes have been processed, we return true so that we can stop the search
 		return _unreached.empty();
 	}
@@ -1073,13 +548,20 @@ protected:
 		for (unsigned i = 0; i < _model.num_subgoals(); ++i) {
 			if (!_in_seed[i] && _model.goal(state, i)) {
 // 				node->satisfies_subgoal = true;
+                node->R += 1.0;
 				if (!_optimal_paths[i]) _optimal_paths[i] = node;
 				_unreached.erase(i);
 			}
 		}
+        update_best_node( node );
  		return _unreached.empty();
 		//return false; // return false so we don't interrupt the processing
 	}
+
+    void update_best_node( const NodePT& node ) {
+        if ( node->R > _best_node->R )
+            _best_node = node;
+    }
 
 	void mark_seed_subgoals(const NodePT& node) {
 		std::vector<bool> _(_model.num_subgoals(), false);

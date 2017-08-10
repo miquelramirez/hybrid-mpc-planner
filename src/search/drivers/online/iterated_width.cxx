@@ -2,7 +2,7 @@
 
 #include <lapkt/novelty/features.hxx>
 #include <search/drivers/online/iterated_width.hxx>
-#include <search/algorithms/iterated_width.hxx>
+#include <search/algorithms/lookahead/iw.hxx>
 #include <search/novelty/fs_novelty.hxx>
 #include <search/utils.hxx>
 #include <problem_info.hxx>
@@ -14,18 +14,25 @@
 
 namespace fs0 { namespace drivers { namespace online {
 
+typedef lookahead::IWNode<SimpleStateModel::StateT,GroundAction> NodePT;
 
 template <typename FeatureEvaluatorT, typename NoveltyEvaluatorT>
-std::unique_ptr<FS0IWAlgorithm<SimpleStateModel, FeatureEvaluatorT, NoveltyEvaluatorT>>
-create(const Config& config, FeatureEvaluatorT&& featureset, const SimpleStateModel& model, SearchStats& stats) {
+std::unique_ptr<lookahead::IW<NodePT, SimpleStateModel, NoveltyEvaluatorT, FeatureEvaluatorT>>
+create(const Config& config, FeatureEvaluatorT&& featureset, const SimpleStateModel& model, bfws::BFWSStats& stats) {
 	using FeatureValueT = typename NoveltyEvaluatorT::FeatureValueT;
 
-	using EngineT = FS0IWAlgorithm<SimpleStateModel, FeatureEvaluatorT, NoveltyEvaluatorT>;
+
+	using EngineT = lookahead::IW<NodePT, SimpleStateModel, NoveltyEvaluatorT, FeatureEvaluatorT>;
 	using EnginePT = std::unique_ptr<EngineT>;
 
 	unsigned max_novelty = config.getOption<int>("width.max");
+
+	bool do_complete_search = config.getOption<bool>("lookahead.iw.complete", false);
+
+	typename EngineT::Config cfg( do_complete_search, max_novelty, config);
+
     bfws::NoveltyFactory<FeatureValueT> factory(model.getTask(), bfws::SBFWSConfig::NoveltyEvaluatorType::Generic, true, max_novelty);
-	return EnginePT(new EngineT(model, 1, max_novelty, std::move(featureset), factory.create_evaluator(max_novelty), stats));
+	return EnginePT(new EngineT(model, std::move(featureset), factory.create_evaluator(max_novelty), cfg, stats, config.getOption<bool>("lookahead.iw.verbose", false)));
 }
 
 

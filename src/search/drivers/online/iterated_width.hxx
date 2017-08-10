@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include <search/stats.hxx>
+#include <search/drivers/sbfws/stats.hxx>
 #include <models/simple_state_model.hxx>
 #include <search/algorithms/iterated_width.hxx>
 
@@ -18,7 +18,7 @@ public:
 	ExitCode search(const SimpleStateModel& problem, const Config& config, const std::string& out_dir, float start_time) override;
 
 protected:
-	SearchStats _stats;
+	bfws::BFWSStats _stats;
 
     template <typename NoveltyEvaluatorT, typename FeatureEvaluatorT>
     ExitCode
