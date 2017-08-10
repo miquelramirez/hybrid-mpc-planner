@@ -142,21 +142,23 @@ PythonRunner::setup() {
     _instance_config = std::unique_ptr<Config>(new Config(_options.getDriver(), _options.getUserOptions(), _options.getDefaultConfigurationFilename()));
     Config::setAsGlobal( std::move(_instance_config) );
 
-    LPT_INFO("main", "Generating the problem (" << get_data_dir() << ")... ");
+    LPT_INFO("main", "[PythonRunner::setup] Generating the problem (" << _options.getDataDir() << ")... ");
     //! This will generate the problem and set it as the global singleton instance
     const std::string problem_spec = _options.getDataDir() + "/problem.json";
     auto data = Loader::loadJSONObject( problem_spec);
-    auto problem = generate(data, get_data_dir());
+    LPT_INFO("main", "[PythonRunner::setup] Loaded JSON specification from '" << problem_spec << "'... ");
+    auto problem = generate(data, _options.getDataDir());
+    LPT_INFO("main", "[PythonRunner::setup] Activated problem model... ");
     Config& config = Config::instance();
 
-    LPT_INFO("main", "Problem instance loaded" );
+    LPT_INFO("main", "[PythonRunner::setup] Problem instance loaded" );
     report_stats( *problem, _options.getOutputDir() );
     update( config );
 
-    LPT_INFO("main", "Indexing state variables..." );
+    LPT_INFO("main", "[PythonRunner::setup] Indexing state variables..." );
     index_state_variables();
     _setup_time = aptk::time_used() - t0;
-
+    LPT_INFO("main", "[PythonRunner::setup] Finished!" );
     // Singleton management: note that we're not using the Lock class because
     // the pointers are initialised during this method
     _lang_info = fstrips::LanguageInfo::claimOwnership();
@@ -173,6 +175,9 @@ PythonRunner::index_state_variables() {
 
 void
 PythonRunner::set_initial_state( bp::dict& new_state ) {
+    if ( _problem == nullptr ) {
+        throw std::runtime_error("[PythonRunner::set_initial_state] Error: before setting states it is necessary to setup the planner");
+    }
     SingletonLock lock(*this);
     _state = std::make_shared<State>(Problem::getInstance().getInitialState());
     const ProblemInfo& info = ProblemInfo::getInstance();
