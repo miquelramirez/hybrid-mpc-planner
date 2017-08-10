@@ -84,9 +84,11 @@ env.Append(LIBPATH=[ os.path.abspath(p) for p in lib_paths ])
 
 Export('env')
 Export('src_objs')
+
 SConscript( 'gecode_dependencies' )
 SConscript( 'soplex_dependencies' )
 SConscript( 'ompl_dependencies' )
 SConscript( 'src/SConscript')
+SConscript( 'src/search/drivers/online/SConscript')
 
 env.SharedLibrary(lib_name, src_objs )

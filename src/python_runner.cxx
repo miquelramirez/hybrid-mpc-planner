@@ -8,6 +8,8 @@
 #include <utils/printers/printers.hxx>
 #include <languages/fstrips/language.hxx>
 #include <languages/fstrips/operations.hxx>
+#include <search/drivers/setups.hxx>
+#include <search/drivers/online/registry.hxx>
 
 // MRJ: Deactivated for now
 // #include <search/ompl/default_engine.hxx>
@@ -47,7 +49,8 @@ PythonRunner::PythonRunner() :
     _simulate_plan(false),
     _verify_plan( false ),
     _current_driver( nullptr ),
-    _state(nullptr) {
+    _state(nullptr),
+    _state_model(nullptr) {
 
 }
 
@@ -67,6 +70,7 @@ PythonRunner::PythonRunner( const PythonRunner& other ) {
     _current_driver = nullptr;
     _options = other._options;
     _state = nullptr;
+    _state_model = nullptr;
 }
 
 PythonRunner::~PythonRunner() {
@@ -155,6 +159,9 @@ PythonRunner::setup() {
     report_stats( *problem, _options.getOutputDir() );
     update( config );
 
+    LPT_INFO("main", "[PythonRunner::setup] Grounding Actions....");
+    _state_model = std::make_shared<SimpleStateModel>(drivers::GroundingSetup::fully_ground_simple_model(*problem));
+
     LPT_INFO("main", "[PythonRunner::setup] Indexing state variables..." );
     index_state_variables();
     _setup_time = aptk::time_used() - t0;
@@ -230,8 +237,9 @@ PythonRunner::solve() {
     _problem->setInitialState( *_state );
     SingletonLock lock(*this);
     float t0 = aptk::time_used();
-    //Config& config = Config::instance();
-
+    Config& config = Config::instance();
+    _current_driver = online::EngineRegistry::instance().get(_options.getDriver());
+    ExitCode code = _current_driver->search(*_state_model, config, _options.getOutputDir(), 0.0f);
     _search_time = aptk::time_used() - t0;
 }
 

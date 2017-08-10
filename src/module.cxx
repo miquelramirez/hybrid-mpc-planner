@@ -10,6 +10,8 @@ BOOST_PYTHON_MODULE( libfs_planner )
     .def( "set_initial_state", &PythonRunner::set_initial_state )
     .def( "solve", &PythonRunner::solve )
     .def( "simulate_plan", &PythonRunner::simulate_plan)
+    .def( "get_user_option", &PythonRunner::get_user_option )
+    .def( "set_user_option", &PythonRunner::set_user_option )
     //! Read only properties
     .add_property( "plan", &PythonRunner::get_plan )
     .add_property( "plan_duration", &PythonRunner::get_plan_duration )

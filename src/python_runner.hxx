@@ -5,6 +5,7 @@
 #include <fs_types.hxx>
 #include <problem.hxx>
 #include <fstrips/language_info.hxx>
+#include <models/simple_state_model.hxx>
 #include <search/drivers/base.hxx>
 #include <search/runner.hxx>
 #include <search/options.hxx>
@@ -72,6 +73,9 @@ public:
     //! output_dir - path where the planner is going to leave its output
     std::string get_output_dir( )  { return _options.getOutputDir(); }
     void        set_output_dir( std::string dir ) { _options.setOutputDir(dir); }
+    //! user options
+    std::string get_user_option( std::string s ) { return _options.getUserOption(s); }
+    void        set_user_option( std::string name, std::string value ) { _options.setUserOption( name, value ); }
     //! delta_max - maximum duration of intervals and motions
     double      get_delta_max( ) { return _time_step; }
     void        set_delta_max( double t) { _time_step = t; }
@@ -126,8 +130,9 @@ private:
     std::unique_ptr<Problem>                _problem;
     std::map< std::string, VariableIdx >    _var_index;
     std::unique_ptr<Config>                 _instance_config;
-    Driver*                                 _current_driver;
+    EmbeddedDriver*                         _current_driver;
     std::shared_ptr<State>                  _state;
+    std::shared_ptr<SimpleStateModel>       _state_model;
 };
 
 }} // namespace
