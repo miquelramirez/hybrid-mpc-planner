@@ -2,21 +2,12 @@
 #include <components.hxx>
 #include <problem.hxx>
 #include <utils/loader.hxx>
-#include <search/search.hxx>
-
-#include <search/runner.hxx>
 #include <utils/config.hxx>
-#include <utils/logging.hxx>
 #include <lapkt/tools/logging.hxx>
 #include <lapkt/tools/resources_control.hxx>
-
-#include <search/result.hxx>
-
-#include <search/engines/registry.hxx>
-#include <actions/hybrid_checker.hxx>
 #include <utils/printers/printers.hxx>
-#include <utils/config.hxx>
-#include <utils/logging.hxx>
+#include <languages/fstrips/language.hxx>
+#include <languages/fstrips/operations.hxx>
 
 // MRJ: Deactivated for now
 // #include <search/ompl/default_engine.hxx>
@@ -29,7 +20,7 @@ class SingletonLock {
 public:
     SingletonLock( PythonRunner& r )
         : _runner(r) {
-            LanguageInfo::instance( std::move(_runner._lang_info ));
+            fstrips::LanguageInfo::setInstance( std::move(_runner._lang_info ));
             ProblemInfo::setInstance( std::move(_runner._problem_info));
             Problem::setInstance( std::move(_runner._problem) );
             Config::setAsGlobal( std::move(_runner._instance_config) );
@@ -48,20 +39,15 @@ PythonRunner::PythonRunner() :
     _setup_time( 0.0 ),
     _search_time( 0.0 ),
     _simulation_time( 0.0 ),
-
-    _result( aptk::human_readable_result(aptk::HybridSearchAlgorithmResult::NeedsToRunFirst) ),
     _timeout( 10 ),
-    _data_dir( "data" ),
-    _config( "./config.json"),
-    _output_dir( "." ),
     _time_step( 1.0 ),
     _control_eps( 0.01 ),
     _time_horizon( 100 ),
     _budget(std::numeric_limits<unsigned>::max()),
-    _retry_when_failed(false),
     _simulate_plan(false),
     _verify_plan( false ),
-    _current_driver( nullptr ) {
+    _current_driver( nullptr ),
+    _state(nullptr) {
 
 }
 
@@ -70,45 +56,58 @@ PythonRunner::PythonRunner( const PythonRunner& other ) {
     _search_time = other._search_time;
     _result = other._result;
     _timeout = other._timeout;
-    _data_dir = other._data_dir;
-    _config = other._config;
-    _output_dir = other._output_dir;
     _time_step = other._time_step;
     _control_eps = other._control_eps;
     _time_horizon = other._time_horizon;
     _budget = other._budget;
-    _retry_when_failed = other._retry_when_failed;
     _simulate_plan = other._simulate_plan;
     _verify_plan = other._verify_plan;
     _problem = nullptr;
     _instance_config = nullptr;
+    _current_driver = nullptr;
+    _options = other._options;
+    _state = nullptr;
 }
 
 PythonRunner::~PythonRunner() {
 
 }
 
+void PythonRunner::report_stats(const Problem& problem, const std::string& out_dir) {
+	const ProblemInfo& info = ProblemInfo::getInstance();
+	const AtomIndex& tuple_index = problem.get_tuple_index();
+	unsigned n_actions = problem.getGroundActions().size();
+	std::ofstream json_out( out_dir + "/problem_stats.json" );
+	json_out << "{" << std::endl;
+
+	unsigned num_goal_atoms = fs::all_atoms(*problem.getGoalConditions()).size();
+	unsigned num_sc_atoms = 0;
+	for ( auto sc : problem.getStateConstraints() ) {
+		num_sc_atoms += fs::all_atoms(*sc).size();
+	}
+
+	LPT_INFO("cout", "Number of objects: " << info.num_objects());
+	LPT_INFO("cout", "Number of state variables: " << info.getNumVariables());
+	LPT_INFO("cout", "Number of problem atoms: " << tuple_index.size());
+	LPT_INFO("cout", "Number of action schemata: " << problem.getActionData().size());
+	LPT_INFO("cout", "Number of (perhaps partially) ground actions: " << n_actions);
+	LPT_INFO("cout", "Number of goal atoms: " << num_goal_atoms);
+	LPT_INFO("cout", "Number of state constraint atoms: " << num_sc_atoms);
+
+
+	json_out << "\t\"num_objects\": " << info.num_objects() << "," << std::endl;
+	json_out << "\t\"num_state_variables\": " << info.getNumVariables() << "," << std::endl;
+	json_out << "\t\"num_atoms\": " << tuple_index.size() << "," << std::endl;
+	json_out << "\t\"num_action_schema\": " << problem.getActionData().size() << "," << std::endl;
+	json_out << "\t\"num_grounded_actions\": " << n_actions << "," << std::endl;
+	json_out << "\t\"num_goal_atoms\": " << num_goal_atoms << "," << std::endl;
+	json_out << "\t\"num_state_constraint_atoms\": " << num_sc_atoms;
+	json_out << std::endl << "}" << std::endl;
+	json_out.close();
+}
+
 void
-PythonRunner::setup() {
-    /* code */
-    float t0 = aptk::time_used();
-
-    lapkt::tools::Logger::init(_options.getOutputDir() + "/logs");
-
-    _instance_config = std::unique_ptr<Config>(new Config(_config));
-    Config::setAsGlobal( std::move(_instance_config) );
-
-    LPT_INFO("main", "Generating the problem (" << get_data_dir() << ")... ");
-    auto data = Loader::loadJSONObject( get_data_dir() + "/problem.json");
-
-    //! This will generate the problem and set it as the global singleton instance
-    generate(data, get_data_dir());
-
-
-    Config& config = Config::instance();
-
-    LPT_INFO("main", "Problem instance loaded:" << std::endl << Problem::getInstance());
-
+PythonRunner::update( Config& config ) {
     LPT_INFO("main", "Applying options to planner configuration:");
 
     double horizon = get_horizon();
@@ -117,7 +116,7 @@ PythonRunner::setup() {
 
     double time_step = get_delta_max();
     LPT_INFO("main", "\tTime Step: " << time_step << " secs" );
-    config.setTimeStep( time_step );
+    config.setDiscretizationStep( time_step );
 
     double control_eps = get_delta_min();
     LPT_INFO("main", "\tControl Epsilon: " << control_eps << " secs");
@@ -129,6 +128,30 @@ PythonRunner::setup() {
     // config.setBudget( get_budget() );
 
     LPT_INFO("main", "Planner configuration: " << std::endl << config);
+}
+
+void
+PythonRunner::setup() {
+    /* code */
+    float t0 = aptk::time_used();
+
+    lapkt::tools::Logger::init(_options.getOutputDir() + "/logs");
+    Config::init(_options.getDriver(), _options.getUserOptions(), _options.getDefaultConfigurationFilename());
+
+    // MRJ: The following two lines make up for the method Config::init()
+    _instance_config = std::unique_ptr<Config>(new Config(_options.getDriver(), _options.getUserOptions(), _options.getDefaultConfigurationFilename()));
+    Config::setAsGlobal( std::move(_instance_config) );
+
+    LPT_INFO("main", "Generating the problem (" << get_data_dir() << ")... ");
+    //! This will generate the problem and set it as the global singleton instance
+    const std::string problem_spec = _options.getDataDir() + "/problem.json";
+    auto data = Loader::loadJSONObject( problem_spec);
+    auto problem = generate(data, get_data_dir());
+    Config& config = Config::instance();
+
+    LPT_INFO("main", "Problem instance loaded" );
+    report_stats( *problem, _options.getOutputDir() );
+    update( config );
 
     LPT_INFO("main", "Indexing state variables..." );
     index_state_variables();
@@ -144,94 +167,87 @@ PythonRunner::setup() {
 
 void
 PythonRunner::index_state_variables() {
-    for ( fs0::VariableIdx x = 0; x < Problem::getInstance().getProblemInfo().getNumVariables(); x++ )
-        _var_index[ Problem::getInstance().getProblemInfo().getVariableName(x) ] = x;
+    for ( fs0::VariableIdx x = 0; x < ProblemInfo::getInstance().getNumVariables(); x++ )
+        _var_index[ ProblemInfo::getInstance().getVariableName(x) ] = x;
 }
 
 void
 PythonRunner::set_initial_state( bp::dict& new_state ) {
-    ProblemInfo::setInstance( std::move(_problem_info));
-    Problem::setInstance( std::move(_problem) );
-    Config::setAsGlobal( std::move(_instance_config) );
-    State::ptr s = std::make_shared<State>(*Problem::getInstance().getInitialState());
-    const fs0::ProblemInfo& info = Problem::getInstance().getProblemInfo();
+    SingletonLock lock(*this);
+    _state = std::make_shared<State>(Problem::getInstance().getInitialState());
+    const ProblemInfo& info = ProblemInfo::getInstance();
     const bp::list& entries = new_state.items();
+
+    std::vector<Atom> facts;
+
     for ( unsigned k = 0; k < bp::len(entries); k++ ) {
         std::string var_name = bp::extract<std::string>(entries[k][0]);
         auto it = _var_index.find(var_name);
         if (it == _var_index.end()) {
             throw std::runtime_error( "Error: PythonRunner::set_initial_state : unknown variable found in state: " + var_name );
         }
-        VariableIdx x = it->second;
-        ObjectIdx value;
-        if ( info.getVariableGenericType( x ) == ObjectType::NUMBER )
-            value = bp::extract<float>(entries[k][1]);
-        else if ( info.getVariableGenericType( x ) == ObjectType::OBJECT) {
+        VariableIdx var = it->second;
+        object_id value;
+
+        type_id var_type = info.sv_type(var);
+
+		if (var_type == type_id::bool_t) {
+            bool tmp = bp::extract<int>(entries[k][1]);
+			value =  make_object(tmp);
+		} else if (var_type == type_id::float_t) {
+			// MRJ: We're using the specialization so the floating point number
+			// is stored correctly via type punning
+            float tmp = bp::extract<float>(entries[k][1]);
+		    value =  make_object(tmp);
+		}
+		else if (var_type == type_id::int_t) {
+            int tmp = bp::extract<int>(entries[k][1]);
+		    value =  make_object(type_id::int_t, tmp );
+		}
+		else if (var_type == type_id::object_t) {
             std::string obj_name = bp::extract<std::string>( bp::str(entries[k][1]).encode("utf-8"));
-
-            value = info.getObjectId(obj_name);
-        }
-
-        else if ( info.getVariableGenericType( x ) == ObjectType::INT)
-            value = bp::extract<int>(entries[k][1]);
-        else if ( info.getVariableGenericType( x ) == ObjectType::BOOL)
-            value = bp::extract<int>(entries[k][1]);
-        s->setValue( x, value );
+			value =  info.get_object_id(obj_name);
+		}
+		else {
+			throw std::runtime_error("PythonRunner::set_initial_state() : Cannot load state variable '" + info.getVariableName(var)
+									 + "' of type '" + fstrips::LanguageInfo::instance().get_typename(var) + "'");
+		}
+        facts.push_back( Atom( var, value ));
     }
-    _problem = Problem::claimOwnership();
-    _problem->setInitialState( s );
-    _problem_info = ProblemInfo::claimOwnership();
-    _instance_config = Config::claimOwnership();
+    _state->accumulate(facts);
 }
 
 
 void
 PythonRunner::solve() {
-    ProblemInfo::setInstance( std::move(_problem_info ));
-    Problem::setInstance( std::move(_problem) );
-    Config::setAsGlobal( std::move(_instance_config) );
+    // MRJ: Note that we need to set the initial state before "locking in"
+    // the singletons
+    _problem->setInitialState( *_state );
+    SingletonLock lock(*this);
     float t0 = aptk::time_used();
-    Config& config = Config::instance();
+    //Config& config = Config::instance();
 
-    if (    config.getModelTag() == "hybrid"
-            || config.getModelTag() == "ompl" ) {
-
-        if ( config.getModelTag() == "hybrid" ) {
-            solve_with_hybrid_planner();
-        }
-        else
-            solve_with_ompl_planner();
-    }
-    else {
-        std::string msg = "Run-time Error: Unsupported planning model requested: '";
-        msg += config.getModelTag();
-        msg += "''";
-        LPT_INFO( "main", msg );
-        throw std::runtime_error(msg);
-    }
     _search_time = aptk::time_used() - t0;
-    _problem_info = ProblemInfo::claimOwnership();
-    _problem = Problem::claimOwnership();
-    _instance_config = Config::claimOwnership();
 }
 
 
 void
 PythonRunner::export_plan( ) {
-    double      timing;
-    unsigned    act_index;
+    double                  timing;
+    const GroundAction*     act;
     const Problem& p = Problem::getInstance();
     _plan = bp::list();
-    for ( auto entry : _native_plan ) {
-        std::tie( timing, act_index) = entry;
-        if (act_index >= p.getGroundActions().size()) continue;
-        bp::tuple py_entry = bp::make_tuple(timing, p.getGroundActions()[act_index]->getFullName());
+    for ( auto entry : _native_plan.get_control_events() ) {
+        std::tie( timing, act) = entry;
+        bp::tuple py_entry = bp::make_tuple(timing, act->getName());
         _plan.append(py_entry);
     }
 }
 
 void
 PythonRunner::solve_with_hybrid_planner() {
+    throw std::runtime_error("Deprecated!");
+    /*
     Config& config = Config::instance();
     LPT_INFO( "main", "Starting Hybrid Planner...." << std::endl );
     fs0::HybridStateModel model(Problem::getInstance());
@@ -323,7 +339,7 @@ PythonRunner::solve_with_hybrid_planner() {
 	json_out << std::endl;
 	json_out << "}" << std::endl;
 	json_out.close();
-
+    */
 }
 
 
@@ -401,45 +417,41 @@ PythonRunner::solve_with_ompl_planner() {
 
 bp::list
 PythonRunner::simulate_plan( double duration, double step_size ) {
-    ProblemInfo::setInstance( std::move(_problem_info ));
-    Problem::setInstance( std::move(_problem) );
-    Config::setAsGlobal( std::move(_instance_config) );
+    SingletonLock lock(*this);
     float t0 = aptk::time_used();
 
 
     double sim_duration = std::min( duration, _plan_duration );
     LPT_INFO( "main", "Simulating plan for " << sim_duration << " time units");
 
-    std::vector< State::ptr > trace;
-    HybridChecker::simulatePlan( Problem::getInstance(),  _native_plan, *Problem::getInstance().getInitialState(), sim_duration, step_size, trace );
-    LPT_INFO( "main", "Final simulation state: " << *trace.back() );
+    _native_plan.simulate( step_size, sim_duration );
+    LPT_INFO( "main", "Final simulation state: " << *_native_plan.trajectory().back() );
 
     bp::list py_trace;
     const ProblemInfo& info = ProblemInfo::getInstance();
 
-    for ( unsigned k = 0; k < trace.size(); k++ ) {
-        State::ptr s_k = trace[k];
+    for ( unsigned k = 0; k < _native_plan.trajectory().size(); k++ ) {
+        auto s_k = _native_plan.trajectory()[k];
         bp::dict py_s_k;
         for ( unsigned x = 0; x < info.getNumVariables(); x++ ) {
-            ObjectIdx value = s_k->getValue(x);
-            if ( info.getVariableGenericType( x ) == ObjectType::NUMBER )
-                py_s_k[info.getVariableName(x)] = (float)value;
-            else if ( info.getVariableGenericType( x ) == ObjectType::OBJECT) {
-                py_s_k[info.getVariableName(x)] = info.getObjectName( x, value );
-            }
+            object_id value = s_k->getValue(x);
+            type_id var_type = info.sv_type(x);
 
-            else if ( info.getVariableGenericType( x ) == ObjectType::INT) {
-                py_s_k[info.getVariableName(x)] = (int)value;
-            }
-            else if ( info.getVariableGenericType( x ) == ObjectType::BOOL)
-                py_s_k[info.getVariableName(x)] = (bool)(int)value;
+    		if (var_type == type_id::bool_t) {
+                py_s_k[info.getVariableName(x)] = fs0::value<bool>(value);
+    		} else if (var_type == type_id::float_t) {
+                py_s_k[info.getVariableName(x)] = fs0::value<float>(value);
+    		}
+    		else if (var_type == type_id::int_t) {
+                py_s_k[info.getVariableName(x)] = fs0::value<int>(value);
+    		}
+    		else if (var_type == type_id::object_t) {
+                py_s_k[info.getVariableName(x)] = info.object_name(value);
+    		}
         }
         py_trace.append(py_s_k);
     }
     _simulation_time = aptk::time_used() - t0;
-    _problem_info = ProblemInfo::claimOwnership();
-    _problem = Problem::claimOwnership();
-    _instance_config = Config::claimOwnership();
     return py_trace;
 }
 

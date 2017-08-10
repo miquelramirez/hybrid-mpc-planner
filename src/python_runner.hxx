@@ -5,6 +5,7 @@
 #include <fs_types.hxx>
 #include <problem.hxx>
 #include <fstrips/language_info.hxx>
+#include <search/drivers/base.hxx>
 #include <search/runner.hxx>
 #include <search/options.hxx>
 #include <utils/config.hxx>
@@ -59,15 +60,18 @@ public:
     //! time out - time alloted for search (only used by anytime planners)
     double      get_timeout() { return _timeout; }
     void        set_timeout( double t) { _timeout = t; }
+    //! driver - select search engine to be used
+    std::string get_search_driver() { return _options.getDriver(); }
+    void        set_search_driver( std::string s ) { _options.setDriver(s); }
     //! data_dir - path to directory where the planner is to find its data
-    std::string get_data_dir() { return _data_dir; }
-    void        set_data_dir( std::string data) { _data_dir = data; }
+    std::string get_data_dir() { return _options.getDataDir(); }
+    void        set_data_dir( std::string data) { _options.setDataDir(data); }
     //! config - path to the config file to be used to setup the planner
-    std::string get_config() { return _config; }
-    void        set_config( std::string cfg) { _config = cfg; }
+    std::string get_config() { return _options.getDefaultConfigurationFilename(); }
+    void        set_config( std::string cfg) { _options.setDefaultConfigurationFilename(cfg); }
     //! output_dir - path where the planner is going to leave its output
-    std::string get_output_dir( )  { return _output_dir; }
-    void        set_output_dir( std::string dir ) { _output_dir = dir; }
+    std::string get_output_dir( )  { return _options.getOutputDir(); }
+    void        set_output_dir( std::string dir ) { _options.setOutputDir(dir); }
     //! delta_max - maximum duration of intervals and motions
     double      get_delta_max( ) { return _time_step; }
     void        set_delta_max( double t) { _time_step = t; }
@@ -97,6 +101,8 @@ protected:
 
     void        index_state_variables();
 
+    void        report_stats(const Problem& problem, const std::string& out_dir);
+    void        update(Config& cfg);
 private:
 
 
@@ -109,9 +115,6 @@ private:
     double                                  _simulation_time;
     std::string                             _result;
     unsigned                                _timeout;
-    std::string                             _data_dir;
-	std::string                             _config;
-	std::string                             _output_dir;
     double                                  _time_step;
     double                                  _control_eps;
     double                                  _time_horizon;
@@ -124,6 +127,7 @@ private:
     std::map< std::string, VariableIdx >    _var_index;
     std::unique_ptr<Config>                 _instance_config;
     Driver*                                 _current_driver;
+    std::shared_ptr<State>                  _state;
 };
 
 }} // namespace

@@ -9,7 +9,7 @@ HOME = os.path.expanduser("~")
 vars = Variables(['variables.cache', 'custom.py'], ARGUMENTS)
 vars.Add(BoolVariable('debug', 'Whether this is a debug build', 'no'))
 vars.Add(BoolVariable('edebug', 'Extreme debug', 'no'))
-vars.Add(PathVariable('lapkt', 'Path where the LAPKT library is installed', os.getenv('LAPKT2_PATH', ''), PathVariable.PathIsDir))
+vars.Add(PathVariable('lapkt', 'Path where the LAPKT library is installed', os.getenv('LAPKT', ''), PathVariable.PathIsDir))
 vars.Add(PathVariable('fs', 'Path where the FS+ library is installed', os.getenv('FS_PATH', ''), PathVariable.PathIsDir))
 
 def which(program):
@@ -37,17 +37,17 @@ if env['edebug']:
 	env.Append( CCFLAGS = ['-g', '-DDEBUG', '-DEDEBUG' ] )
 	fs_libname = 'fs-edebug'
 	lapkt_lib_sufix = '-edebug'
-	lib_name = 'fs_edebug.so'
+	lib_name = 'fs_planner_edebug.so'
 elif env['debug']:
 	env.Append( CCFLAGS = ['-g', '-DDEBUG' ] )
 	fs_libname = 'fs-debug'
 	lapkt_lib_sufix = '-debug'
-	lib_name = 'fs_debug.so'
+	lib_name = 'fs_planner_debug.so'
 else:
 	env.Append( CCFLAGS = ['-O3', '-DNDEBUG' ] )
 	fs_libname = 'fs'
 	lapkt_lib_sufix = ''
-	lib_name = 'fs.so'
+	lib_name = 'fs_planner.so'
 
 # Header and library directories.
 # We include pre-specified '~/local/include' and '~/local/lib' directories in case local versions of some libraries (e.g. Boost) are needed
