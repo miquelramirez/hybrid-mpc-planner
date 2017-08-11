@@ -9,7 +9,7 @@
 #include <problem.hxx>
 #include <problem_info.hxx>
 #include <search/drivers/sbfws/base.hxx>
-#include <search/drivers/sbfws/stats.hxx>
+#include <search/algorithms/lookahead/iw_stats.hxx>
 #include <utils/printers/vector.hxx>
 #include <utils/printers/actions.hxx>
 #include <lapkt/search/components/open_lists.hxx>
@@ -246,16 +246,8 @@ protected:
 	//! A single novelty evaluator will be in charge of evaluating all nodes
 	SimEvaluatorT _evaluator;
 
-	//! Some node counts
-	uint32_t _generated;
-	uint32_t _w1_nodes_expanded;
-	uint32_t _w2_nodes_expanded;
-	uint32_t _w1_nodes_generated;
-	uint32_t _w2_nodes_generated;
-	uint32_t _w_gt2_nodes_generated;
-
 	//! The general statistics of the search
-	bfws::BFWSStats& _stats;
+	IteratedWidthStats& _stats;
 
 	//! Whether to print some useful extra information or not
 	bool _verbose;
@@ -266,7 +258,7 @@ protected:
 public:
 
 	//! Constructor
-	IW(const StateModel& model, const FeatureSetT& featureset, NoveltyEvaluatorT* evaluator, const IW::Config& config, bfws::BFWSStats& stats, bool verbose) :
+	IW(const StateModel& model, const FeatureSetT& featureset, NoveltyEvaluatorT* evaluator, const IW::Config& config, IteratedWidthStats& stats, bool verbose) :
 		_model(model),
 		_config(config),
         _best_node(nullptr),
@@ -274,12 +266,6 @@ public:
 		_unreached(),
 		_in_seed(),
 		_evaluator(featureset, evaluator),
-		_generated(1),
-		_w1_nodes_expanded(0),
-		_w2_nodes_expanded(0),
-		_w1_nodes_generated(0),
-		_w2_nodes_generated(0),
-		_w_gt2_nodes_generated(0),
 		_stats(stats),
 		_verbose(verbose)
 	{
@@ -288,14 +274,9 @@ public:
 	void reset() {
 		std::vector<NodePT> _(_optimal_paths.size(), nullptr);
 		_optimal_paths.swap(_);
-		_generated = 1;
-		_w1_nodes_expanded = 0;
-		_w2_nodes_expanded = 0;
-		_w1_nodes_generated = 0;
-		_w2_nodes_generated = 0;
-		_w_gt2_nodes_generated = 0;
         _best_node = nullptr;
 		_evaluator.reset();
+		_stats.reset();
 	}
 
 	~IW() = default;
@@ -305,14 +286,6 @@ public:
 	IW(IW&&) = default;
 	IW& operator=(const IW&) = delete;
 	IW& operator=(IW&&) = default;
-
-	void report_simulation_stats(float simt0) {
-		_stats.simulation();
-		_stats.sim_add_time(aptk::time_used() - simt0);
-		_stats.sim_add_expanded_nodes(_w1_nodes_expanded+_w2_nodes_expanded);
-		_stats.sim_add_generated_nodes(_w1_nodes_generated+_w2_nodes_generated+_w_gt2_nodes_generated);
-		_stats.reachable_subgoals( _model.num_subgoals() - _unreached.size());
-	}
 
 	std::vector<NodePT> extract_seed_nodes() {
 		std::vector<NodePT> seed_nodes;
@@ -346,6 +319,7 @@ public:
 		if ( _config._num_brfs_layers > 0 ) {
 			for (const auto& a : _model.applicable_actions(s, _config._enforce_state_constraints)) {
 				StateT s_a = _model.next( s, a );
+				_stats.generation();
 	        	run(s_a, _config._max_width);
 				std::vector<NodePT> _(_optimal_paths.size(), nullptr);
 				_optimal_paths.swap(_);
@@ -383,7 +357,8 @@ public:
 			zcc_setting = std::make_shared<DeactivateZCC>();
 		}
 
-		NodePT root = std::make_shared<NodeT>(seed, _generated++);
+		NodePT root = std::make_shared<NodeT>(seed, _stats.generated());
+		_stats.generation();
 		mark_seed_subgoals(root);
 
 		auto nov =_evaluator.evaluate(*root);
@@ -395,6 +370,7 @@ public:
 		assert(max_width <= 2); // The current swapping-queues method works only for up to width 2, but is trivial to generalize if necessary
 
         _best_node = root;
+		_stats.set_initial_reward(root->R);
 		OpenListT open_w1, open_w2;
 		OpenListT open_w1_next, open_w2_next; // The queues for the next depth level.
 
@@ -406,10 +382,12 @@ public:
 
 				// Expand the node
 				update_novelty_counters_on_expansion(current->_w);
+				_stats.expansion();
 
 				for (const auto& a : _model.applicable_actions(current->state, _config._enforce_state_constraints)) {
 					StateT s_a = _model.next( current->state, a );
-					NodePT successor = std::make_shared<NodeT>(std::move(s_a), a, current, _generated++);
+					NodePT successor = std::make_shared<NodeT>(std::move(s_a), a, current, _stats.generated());
+					_stats.generation();
 
 					unsigned char novelty = _evaluator.evaluate(*successor);
 					update_novelty_counters_on_generation(novelty);
@@ -417,7 +395,7 @@ public:
 					// LPT_INFO("cout", "Simulation - Node generated: " << *successor);
 					if (_config._log_search )
 						_visited.push_back(successor);
-
+					_stats.generation();
 
 					if (process_node(successor)) {  // i.e. all subgoals have been reached before reaching the bound
 						report("All subgoals reached");
@@ -441,25 +419,21 @@ public:
 	}
 
 	void update_novelty_counters_on_expansion(unsigned char novelty) {
-		if (novelty == 1) ++_w1_nodes_expanded;
-		else if (novelty== 2) ++_w2_nodes_expanded;
 	}
 
 	void update_novelty_counters_on_generation(unsigned char novelty) {
-		if (novelty==1) ++_w1_nodes_generated;
-		else if (novelty==2)  ++_w2_nodes_generated;
-		else ++_w_gt2_nodes_generated;
+		if (novelty == 1) _stats.w1_node();
+		else if (novelty== 2) _stats.w2_node();
+		else _stats.wgt2_node();
 	}
 
 	void report(const std::string& result) const {
 		if (!_verbose) return;
 		LPT_INFO("cout", "Simulation - Result: " << result);
 		LPT_INFO("cout", "Simulation - Num reached subgoals: " << (_model.num_subgoals() - _unreached.size()) << " / " << _model.num_subgoals());
-		LPT_INFO("cout", "Simulation - Expanded nodes with w=1 " << _w1_nodes_expanded);
-		LPT_INFO("cout", "Simulation - Expanded nodes with w=2 " << _w2_nodes_expanded);
-		LPT_INFO("cout", "Simulation - Generated nodes with w=1 " << _w1_nodes_generated);
-		LPT_INFO("cout", "Simulation - Generated nodes with w=2 " << _w2_nodes_generated);
-		LPT_INFO("cout", "Simulation - Generated nodes with w>2 " << _w_gt2_nodes_generated);
+		LPT_INFO("cout", "Simulation - Generated nodes with w=1 " << _stats.num_w1_nodes());
+		LPT_INFO("cout", "Simulation - Generated nodes with w=2 " << _stats.num_w2_nodes());
+		LPT_INFO("cout", "Simulation - Generated nodes with w>2 " << _stats.num_wgt2_nodes());
 		if (! _config._log_search ) return;
 
 		using namespace rapidjson;
@@ -538,6 +512,7 @@ protected:
 			if (_model.goal(state, subgoal_idx)) {
                 // MRJ: Reward function
                 node->R += 1.0;
+				_stats.generation_g_decrease();
 // 				node->satisfies_subgoal = true;
 // 				_all_paths[subgoal_idx].push_back(node);
 				if (!_optimal_paths[subgoal_idx]) _optimal_paths[subgoal_idx] = node;
@@ -561,6 +536,7 @@ protected:
 			if (!_in_seed[i] && _model.goal(state, i)) {
 // 				node->satisfies_subgoal = true;
                 node->R += 1.0;
+				_stats.generation_g_decrease();
 				if (!_optimal_paths[i]) _optimal_paths[i] = node;
 				_unreached.erase(i);
 			}
@@ -571,6 +547,7 @@ protected:
 	}
 
     void update_best_node( const NodePT& node ) {
+		_stats.reward(node->R);
         if ( node->R > _best_node->R )
             _best_node = node;
     }

@@ -248,16 +248,16 @@ PythonRunner::solve() {
     ExitCode code = _current_driver->search();
     _current_driver->archive_results_JSON( "results.json" );
     _native_plan.interpret_plan( _current_driver->plan );
-
+    export_plan();
     _search_time = aptk::time_used() - t0;
 }
 
 
 void
 PythonRunner::export_plan( ) {
+
     double                  timing;
     const GroundAction*     act;
-    const Problem& p = Problem::getInstance();
     _plan = bp::list();
     for ( auto entry : _native_plan.get_control_events() ) {
         std::tie( timing, act) = entry;

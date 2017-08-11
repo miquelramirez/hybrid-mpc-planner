@@ -53,7 +53,7 @@ IteratedWidthDriver::search() {
 	search_time = aptk::time_used() - start_time;
 	total_planning_time = aptk::time_used() - start_time;
  	gen_speed = (search_time > 0) ? (float) _stats.generated() / search_time : 0;
-	eval_speed = (search_time > 0) ?(float) _stats.evaluated() / search_time : 0;
+	eval_speed = (search_time > 0) ?(float) _stats.expanded() / search_time : 0;
 	ExitCode result;
 	if (solved) {
 		result = ExitCode::PLAN_FOUND;
@@ -66,7 +66,7 @@ IteratedWidthDriver::search() {
 }
 
 IteratedWidthDriver::EnginePT
-IteratedWidthDriver::create(const Config& config, const IteratedWidthDriver::FeatureEvaluatorT& featureset, const SimpleStateModel& model, bfws::BFWSStats& stats) {
+IteratedWidthDriver::create(const Config& config, const IteratedWidthDriver::FeatureEvaluatorT& featureset, const SimpleStateModel& model, lookahead::IteratedWidthStats& stats) {
 	using FeatureValueT = typename bfws::IntNoveltyEvaluatorI::FeatureValueT;
 
 	unsigned max_novelty = config.getOption<int>("width.max");
@@ -98,8 +98,18 @@ IteratedWidthDriver::do_search1(const SimpleStateModel& model, const IteratedWid
 	return drivers::Utils::do_search(*_engine, model, out_dir, start_time, _stats);
 }
 
-
-
-
+void
+IteratedWidthDriver::archive_scalar_stats( rapidjson::Document& doc ) {
+	EmbeddedDriver::archive_scalar_stats(doc);
+	using namespace rapidjson;
+    Document::AllocatorType& allocator = doc.GetAllocator();
+	doc.AddMember( "expanded", Value(_stats.expanded()).Move(), allocator );
+	doc.AddMember( "generated", Value(_stats.generated()).Move(), allocator );
+	doc.AddMember( "num_w1_nodes", Value(_stats.num_w1_nodes()).Move(), allocator );
+	doc.AddMember( "num_w2_nodes", Value(_stats.num_w2_nodes()).Move(), allocator );
+	doc.AddMember( "num_wgt2_nodes", Value(_stats.num_wgt2_nodes()).Move(), allocator );
+	doc.AddMember( "initial_reward", Value(_stats.initial_reward()).Move(), allocator );
+	doc.AddMember( "max_reward", Value(_stats.max_reward()).Move(), allocator );
+}
 
 } } } // namespaces
