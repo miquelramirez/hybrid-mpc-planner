@@ -208,6 +208,9 @@ public:
 		//! Log search
 		bool _log_search;
 
+		//! BrFS layers
+		unsigned _num_brfs_layers;
+
 		Config(bool complete, unsigned max_width, const fs0::Config& global_config) :
 			_complete(complete),
 			_max_width(max_width),
@@ -216,7 +219,8 @@ public:
 			_enforce_state_constraints(global_config.getOption<bool>("lookahead.iw.enforce_state_constraints", true)),
 			_R_file(global_config.getOption<std::string>("lookahead.iw.from_file", "")),
 			_filter_R_set(global_config.getOption<bool>("lookahead.iw.filter", false)),
-			_log_search(global_config.getOption<bool>("lookahead.iw.log", false))
+			_log_search(global_config.getOption<bool>("lookahead.iw.log", false)),
+			_num_brfs_layers(global_config.getOption<int>("lookahead.iw.layers", 0))
 		{}
 	};
 
@@ -339,9 +343,17 @@ public:
 	bool search(const StateT& s, PlanT& plan) {
         _best_node = nullptr; // Make sure we start assuming no solution found
 
-        run(s, _config._max_width);
-
-
+		if ( _config._num_brfs_layers > 0 ) {
+			for (const auto& a : _model.applicable_actions(s, _config._enforce_state_constraints)) {
+				StateT s_a = _model.next( s, a );
+	        	run(s_a, _config._max_width);
+				std::vector<NodePT> _(_optimal_paths.size(), nullptr);
+				_optimal_paths.swap(_);
+				_evaluator.reset();
+			}
+		}
+		else
+			run(s, _config._max_width);
 		return extract_plan( _best_node, plan);
 	}
 

@@ -1,89 +1,101 @@
 
 
-#include <lapkt/novelty/features.hxx>
 #include <search/drivers/online/iterated_width.hxx>
-#include <search/algorithms/lookahead/iw.hxx>
-#include <search/novelty/fs_novelty.hxx>
-#include <search/utils.hxx>
+#include <lapkt/novelty/features.hxx>
 #include <problem_info.hxx>
 #include <search/drivers/setups.hxx>
+#include <search/utils.hxx>
 
-#include <search/drivers/sbfws/base.hxx>
-#include <search/drivers/sbfws/features/features.hxx>
+
+#include <search/novelty/fs_novelty.hxx>
+
+#include <utils/config.hxx>
 
 
 namespace fs0 { namespace drivers { namespace online {
 
-typedef lookahead::IWNode<SimpleStateModel::StateT,GroundAction> NodePT;
+IteratedWidthDriver::~IteratedWidthDriver() {}
 
-template <typename FeatureEvaluatorT, typename NoveltyEvaluatorT>
-std::unique_ptr<lookahead::IW<NodePT, SimpleStateModel, NoveltyEvaluatorT, FeatureEvaluatorT>>
-create(const Config& config, FeatureEvaluatorT&& featureset, const SimpleStateModel& model, bfws::BFWSStats& stats) {
-	using FeatureValueT = typename NoveltyEvaluatorT::FeatureValueT;
+void
+IteratedWidthDriver::prepare(const SimpleStateModel& model, const Config& config, const std::string& out_dir) {
+	bfws::FeatureSelector<StateT> selector(ProblemInfo::getInstance());
+	_feature_evaluator = std::make_shared<FeatureEvaluatorT>();
+	selector.select(*_feature_evaluator);
+	_engine = create(config, *_feature_evaluator, model, _stats);
+}
 
+void
+IteratedWidthDriver::dispose(/* arguments */) {
+	_engine.reset(nullptr);
+}
 
-	using EngineT = lookahead::IW<NodePT, SimpleStateModel, NoveltyEvaluatorT, FeatureEvaluatorT>;
-	using EnginePT = std::unique_ptr<EngineT>;
+ExitCode
+IteratedWidthDriver::search() {
+
+	if ( _engine == nullptr ) {
+		throw std::runtime_error("[IteratedWidthDriver::search()]: search engine was not prepared!");
+	}
+	LPT_INFO("search", "Resetting search call statistics cached in driver...");
+	reset_results();
+	float start_time = aptk::time_used();
+	try {
+		LPT_INFO("search", "Resetting search engine internal data structures...");
+		_engine->reset();
+		LPT_INFO("search", "Search started...");
+		solved = _engine->solve_model( plan );
+	}
+	catch (const std::bad_alloc& ex)
+	{
+		LPT_INFO("cout", "FAILED TO ALLOCATE MEMORY");
+		oom = true;
+		dispose(); //needs prepare
+	}
+	search_time = aptk::time_used() - start_time;
+	total_planning_time = aptk::time_used() - start_time;
+ 	gen_speed = (search_time > 0) ? (float) _stats.generated() / search_time : 0;
+	eval_speed = (search_time > 0) ?(float) _stats.evaluated() / search_time : 0;
+	ExitCode result;
+	if (solved) {
+		result = ExitCode::PLAN_FOUND;
+	} else if (oom) {
+		result = ExitCode::OUT_OF_MEMORY;
+	} else {
+		result = ExitCode::UNSOLVABLE;
+	}
+	return result;
+}
+
+IteratedWidthDriver::EnginePT
+IteratedWidthDriver::create(const Config& config, const IteratedWidthDriver::FeatureEvaluatorT& featureset, const SimpleStateModel& model, bfws::BFWSStats& stats) {
+	using FeatureValueT = typename bfws::IntNoveltyEvaluatorI::FeatureValueT;
 
 	unsigned max_novelty = config.getOption<int>("width.max");
 
 	bool do_complete_search = config.getOption<bool>("lookahead.iw.complete", false);
+	bool verbose = config.getOption<bool>("lookahead.iw.verbose", false);
 
 	typename EngineT::Config cfg( do_complete_search, max_novelty, config);
 
     bfws::NoveltyFactory<FeatureValueT> factory(model.getTask(), bfws::SBFWSConfig::NoveltyEvaluatorType::Generic, true, max_novelty);
-	return EnginePT(new EngineT(model, std::move(featureset), factory.create_evaluator(max_novelty), cfg, stats, config.getOption<bool>("lookahead.iw.verbose", false)));
+	auto evaluator = factory.create_evaluator(max_novelty);
+
+	return EnginePT(new EngineT(model, std::move(featureset), evaluator , cfg, stats, verbose ));
 }
 
 
 ExitCode
 IteratedWidthDriver::search(const SimpleStateModel& model, const Config& config, const std::string& out_dir, float start_time) {
-    const StateAtomIndexer& indexer = model.getTask().getStateAtomIndexer();
+	bfws::FeatureSelector<StateT> selector(ProblemInfo::getInstance());
 
-	if (config.getOption<bool>("width.force_generic_evaluator", false)) {
-		bfws::FeatureSelector<StateT> selector(ProblemInfo::getInstance());
-
-		LPT_INFO("cout", "FEATURE EVALUATION: Forced to use GenericFeatureSetEvaluator");
-		using FeatureEvaluatorT = lapkt::novelty::GenericFeatureSetEvaluator<StateT>;
-		return do_search1<bfws::IntNoveltyEvaluatorI, FeatureEvaluatorT>(model, selector.select(), config, out_dir, start_time);
-	}
-	if (config.getOption<bool>("width.extra_features", false)) {
-		bfws::FeatureSelector<StateT> selector(ProblemInfo::getInstance());
-
-		if (selector.has_extra_features()) {
-			LPT_INFO("cout", "FEATURE EVALUATION: Extra Features were found!  Using a GenericFeatureSetEvaluator");
-			using FeatureEvaluatorT = lapkt::novelty::GenericFeatureSetEvaluator<StateT>;
-			return do_search1<bfws::IntNoveltyEvaluatorI, FeatureEvaluatorT>(model, selector.select(), config, out_dir, start_time);
-		}
-	}
-
-	if (indexer.is_fully_binary()) { // The state is fully binary
-		LPT_INFO("cout", "FEATURE EVALUATION: Using the specialized StraightFeatureSetEvaluator<bool>");
-		using FeatureEvaluatorT = lapkt::novelty::StraightFeatureSetEvaluator<bool>;
-		return do_search1<bfws::BoolNoveltyEvaluatorI, FeatureEvaluatorT>(model, FeatureEvaluatorT(), config, out_dir, start_time);
-
-	}
-	/*
-	else if (indexer.is_fully_multivalued()) { // The state is fully multivalued
-		LPT_INFO("cout", "FEATURE EVALUATION: Using the specialized StraightFeatureSetEvaluator<object_id>");
-		using FeatureEvaluatorT = lapkt::novelty::StraightFeatureSetEvaluator<int>;
-		return do_search1<IntNoveltyEvaluatorI, FeatureEvaluatorT>(model, FeatureEvaluatorT(), config, out_dir, start_time);
-
-	}*/
-	else { // We have a hybrid state and cannot thus apply optimizations
-		LPT_INFO("cout", "FEATURE EVALUATION: Using a generic IntegerFeatureEvaluator");
-		using FeatureEvaluatorT = bfws::IntegerFeatureEvaluator;
-		return do_search1<bfws::IntNoveltyEvaluatorI, FeatureEvaluatorT>(model, FeatureEvaluatorT(), config, out_dir, start_time);
-	}
+	return do_search1(model, selector.select(), config, out_dir, start_time);
 }
 
 
-template <typename NoveltyEvaluatorT, typename FeatureEvaluatorT>
 ExitCode
-IteratedWidthDriver::do_search1(const SimpleStateModel& model, FeatureEvaluatorT&& featureset, const Config& config, const std::string& out_dir, float start_time) {
-	auto engine = create<FeatureEvaluatorT, NoveltyEvaluatorT>(config, std::move(featureset), model, _stats);
+IteratedWidthDriver::do_search1(const SimpleStateModel& model, const IteratedWidthDriver::FeatureEvaluatorT& featureset, const Config& config, const std::string& out_dir, float start_time) {
+	_engine = create(config, featureset, model, _stats);
 
-	return drivers::Utils::do_search(*engine, model, out_dir, start_time, _stats);
+	return drivers::Utils::do_search(*_engine, model, out_dir, start_time, _stats);
 }
 
 

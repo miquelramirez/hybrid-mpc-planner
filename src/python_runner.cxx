@@ -164,6 +164,11 @@ PythonRunner::setup() {
 
     LPT_INFO("main", "[PythonRunner::setup] Indexing state variables..." );
     index_state_variables();
+
+    LPT_INFO("main", "[PythonRunner::setup] Preparing Search Engine....");
+    _current_driver = online::EngineRegistry::instance().get(_options.getDriver());
+    _current_driver->prepare(*_state_model, config, _options.getOutputDir());
+
     _setup_time = aptk::time_used() - t0;
     LPT_INFO("main", "[PythonRunner::setup] Finished!" );
     // Singleton management: note that we're not using the Lock class because
@@ -237,9 +242,13 @@ PythonRunner::solve() {
     _problem->setInitialState( *_state );
     SingletonLock lock(*this);
     float t0 = aptk::time_used();
-    Config& config = Config::instance();
-    _current_driver = online::EngineRegistry::instance().get(_options.getDriver());
-    ExitCode code = _current_driver->search(*_state_model, config, _options.getOutputDir(), 0.0f);
+    //Config& config = Config::instance();
+    //ExitCode code = _current_driver->search(*_state_model, config, _options.getOutputDir(), 0.0f);
+
+    ExitCode code = _current_driver->search();
+    _current_driver->archive_results_JSON( "results.json" );
+    _native_plan.interpret_plan( _current_driver->plan );
+
     _search_time = aptk::time_used() - t0;
 }
 
