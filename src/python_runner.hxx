@@ -55,7 +55,7 @@ public:
     //! search_time - read only, time spent searching for a plan
     double      get_search_time() { return _search_time; }
     //! plan duration - read only, plan duration in time units
-    double      get_plan_duration() { return _plan_duration; }
+    double      get_plan_duration() { return _native_plan.get_duration(); }
     //! result - read only, string describing result of last call to planner
     std::string get_result() { return _result; }
     //! time out - time alloted for search (only used by anytime planners)
@@ -113,7 +113,6 @@ private:
     bp::list                                _plan;
     dynamics::HybridPlan                    _native_plan;
     EngineOptions                           _options;
-    double                                  _plan_duration;
     double                                  _setup_time;
     double                                  _search_time;
     double                                  _simulation_time;

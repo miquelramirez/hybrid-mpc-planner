@@ -11,6 +11,9 @@
 #include <search/drivers/setups.hxx>
 #include <search/drivers/online/registry.hxx>
 
+#include <locale>
+#include <codecvt>
+
 // MRJ: Deactivated for now
 // #include <search/ompl/default_engine.hxx>
 
@@ -37,7 +40,6 @@ public:
 };
 
 PythonRunner::PythonRunner() :
-    _plan_duration( 0.0 ),
     _setup_time( 0.0 ),
     _search_time( 0.0 ),
     _simulation_time( 0.0 ),
@@ -198,7 +200,9 @@ PythonRunner::set_initial_state( bp::dict& new_state ) {
     std::vector<Atom> facts;
 
     for ( unsigned k = 0; k < bp::len(entries); k++ ) {
-        std::string var_name = bp::extract<std::string>(entries[k][0]);
+        std::string var_name = bp::extract<std::string>(bp::str(entries[k][0]).encode("utf-8"));
+
+
         auto it = _var_index.find(var_name);
         if (it == _var_index.end()) {
             throw std::runtime_error( "Error: PythonRunner::set_initial_state : unknown variable found in state: " + var_name );
@@ -232,6 +236,7 @@ PythonRunner::set_initial_state( bp::dict& new_state ) {
         facts.push_back( Atom( var, value ));
     }
     _state->accumulate(facts);
+    LPT_INFO("search", "Initial state set:" << *_state );
 }
 
 
@@ -443,8 +448,9 @@ PythonRunner::simulate_plan( double duration, double step_size ) {
     float t0 = aptk::time_used();
 
 
-    double sim_duration = std::min( duration, _plan_duration );
+    double sim_duration = std::min( duration, (double)_native_plan.get_duration() );
     LPT_INFO( "main", "Simulating plan for " << sim_duration << " time units");
+    LPT_INFO( "main", "Simulating with dt = " << step_size << " time units");
 
     _native_plan.simulate( step_size, sim_duration );
     LPT_INFO( "main", "Final simulation state: " << *_native_plan.trajectory().back() );
