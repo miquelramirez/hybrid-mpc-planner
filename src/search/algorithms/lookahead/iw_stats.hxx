@@ -50,7 +50,7 @@ namespace fs0 { namespace lookahead {
         	_num_generated_g_decrease = 0; // The number of nodes with a decrease in #g that are expanded
 
             _initial_reward = 0.0f;
-            _max_reward = std::numeric_limits<float>::min();
+            _max_reward = -std::numeric_limits<float>::max();
         }
 
         using DataPointT = std::tuple<std::string, std::string, std::string>;
@@ -60,7 +60,7 @@ namespace fs0 { namespace lookahead {
 
     	static std::string _if_computed(unsigned val);
     	static std::string _avg(unsigned val, unsigned den);
-        
+
     	unsigned long _expanded = 0;
     	unsigned long _generated = 0;
 
@@ -71,7 +71,7 @@ namespace fs0 { namespace lookahead {
     	unsigned long _num_generated_g_decrease = 0; // The number of nodes with a decrease in #g that are expanded
 
         float   _initial_reward = 0.0f;
-        float   _max_reward = std::numeric_limits<float>::min();
+        float   _max_reward = -std::numeric_limits<float>::max();
     };
 
 

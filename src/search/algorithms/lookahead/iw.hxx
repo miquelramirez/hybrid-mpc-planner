@@ -342,14 +342,15 @@ public:
 			for (const auto& a : _model.applicable_actions(s, _config._enforce_state_constraints)) {
 				StateT s_a = _model.next( s, a );
 				_stats.generation();
-	        	run(s_a, _config._max_width);
+
+	        	run(s_a, _config._max_width, true);
 				std::vector<NodePT> _(_optimal_paths.size(), nullptr);
 				_optimal_paths.swap(_);
 				_evaluator.reset();
 			}
 		}
 		else
-			run(s, _config._max_width);
+			run(s, _config._max_width,false);
 		return extract_plan( _best_node, plan);
 	}
 
@@ -370,7 +371,7 @@ public:
     }
 
 
-	bool run(const StateT& seed, unsigned max_width) {
+	bool run(const StateT& seed, unsigned max_width, bool lookahead) {
 		if (_verbose) LPT_INFO("cout", "Simulation - Starting IW Simulation");
 
 		std::shared_ptr<DeactivateZCC> zcc_setting = nullptr;
@@ -390,9 +391,19 @@ public:
 // 		LPT_DEBUG("cout", "Simulation - Seed node: " << *root);
 
 		assert(max_width <= 2); // The current swapping-queues method works only for up to width 2, but is trivial to generalize if necessary
-		evaluate_reward(root);
-        _best_node = root;
-		_stats.set_initial_reward(root->R);
+		if (!lookahead) {
+			evaluate_reward(root);
+			_stats.set_initial_reward(root->R);
+	        _best_node = root;
+			_stats.reward(_best_node->R);
+		} else {
+			evaluate_reward(root);
+			if ( _best_node == nullptr ) {
+				_stats.set_initial_reward(root->R);
+				_best_node = root;
+			}
+			update_best_node(root);
+		}
 		OpenListT open_w1, open_w2;
 		OpenListT open_w1_next, open_w2_next; // The queues for the next depth level.
 
@@ -411,14 +422,13 @@ public:
 					NodePT successor = std::make_shared<NodeT>(std::move(s_a), a, current, _stats.generated());
 					_stats.generation();
 					evaluate_reward(successor);
-
+					update_best_node(successor);
 					unsigned char novelty = _evaluator.evaluate(*successor);
 					update_novelty_counters_on_generation(novelty);
 
 					// LPT_INFO("cout", "Simulation - Node generated: " << *successor);
 					if (_config._log_search )
 						_visited.push_back(successor);
-					_stats.generation();
 
 					if (process_node(successor)) {  // i.e. all subgoals have been reached before reaching the bound
 						report("All subgoals reached");
@@ -450,6 +460,15 @@ public:
 		else _stats.wgt2_node();
 	}
 
+	void archive_node( rapidjson::Value& obj, rapidjson::Document::AllocatorType& allocator, NodePT node ) const {
+		using namespace rapidjson;
+		JSONArchive::store(obj, allocator, node->state);
+		Value v(node->_gen_order);
+		obj.AddMember( "gen_order", v.Move(), allocator);
+		v = Value(node->R);
+		obj.AddMember( "reward", v.Move(), allocator);
+	}
+
 	void report(const std::string& result) const {
 		if (!_verbose) return;
 		LPT_INFO("cout", "Simulation - Result: " << result);
@@ -475,16 +494,9 @@ public:
 		Value visits(kArrayType);
         {
             for ( auto n : _visited ) {
-				auto s = n->state;
                 Value state(kObjectType);
-				JSONArchive::store(state, allocator, s);
-                {
-					Value v(n->_gen_order);
-					state.AddMember( "gen_order", v.Move(), allocator);
-					v = Value(n->R);
-					state.AddMember( "reward", v.Move(), allocator);
-                }
-                visits.PushBack(state.Move(), allocator);
+				archive_node( state, allocator, n );
+				visits.PushBack(state.Move(), allocator);
             }
         }
         trace.AddMember("visited", visits, allocator);
@@ -498,13 +510,13 @@ public:
 
 					while (node->has_parent()) {
 						Value state(kObjectType);
-						JSONArchive::store(state, allocator, node->state);
+						archive_node( state, allocator, node );
 						path.PushBack( state.Move(),allocator);
 						node = node->parent;
 					}
 
 					Value s0(kObjectType);
-					JSONArchive::store( s0, allocator, node->state );
+					archive_node( s0, allocator, node );
 					path.PushBack( s0.Move(), allocator );
 				}
 				opt_paths.PushBack(path.Move(),allocator);
@@ -515,22 +527,18 @@ public:
 
 		Value selected_path(kArrayType);
 		{
-			Value path(kArrayType);
-			{
-				NodePT node = _best_node;
+			NodePT node = _best_node;
 
-				while (node->has_parent()) {
-					Value state(kObjectType);
-					JSONArchive::store(state, allocator, node->state);
-					path.PushBack( state.Move(),allocator);
-					node = node->parent;
-				}
-
-				Value s0(kObjectType);
-				JSONArchive::store( s0, allocator, node->state );
-				path.PushBack( s0.Move(), allocator );
+			while (node->has_parent()) {
+				Value state(kObjectType);
+				archive_node( state, allocator, node );
+				selected_path.PushBack( state.Move(),allocator);
+				node = node->parent;
 			}
-			selected_path.PushBack(path.Move(),allocator);
+
+			Value s0(kObjectType);
+			archive_node( s0, allocator, node );
+			selected_path.PushBack(s0.Move(),allocator);
 
 		}
 		trace.AddMember("selected_path", selected_path, allocator );
@@ -568,8 +576,6 @@ protected:
 			}
 		}
 
-        update_best_node( node );
-
 		// As soon as all nodes have been processed, we return true so that we can stop the search
 		return _unreached.empty();
 	}
@@ -586,7 +592,6 @@ protected:
 				_unreached.erase(i);
 			}
 		}
-        update_best_node( node );
  		return _unreached.empty();
 		//return false; // return false so we don't interrupt the processing
 	}
