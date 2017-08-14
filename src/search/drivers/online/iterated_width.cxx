@@ -6,6 +6,9 @@
 #include <search/drivers/setups.hxx>
 #include <search/utils.hxx>
 
+#include <heuristics/goal_count_signal.hxx>
+#include <heuristics/error_signal.hxx>
+#include <heuristics/metric_signal.hxx>
 
 #include <search/novelty/fs_novelty.hxx>
 
@@ -21,7 +24,8 @@ IteratedWidthDriver::prepare(const SimpleStateModel& model, const Config& config
 	bfws::FeatureSelector<StateT> selector(ProblemInfo::getInstance());
 	_feature_evaluator = std::make_shared<FeatureEvaluatorT>();
 	selector.select(*_feature_evaluator);
-	_engine = create(config, *_feature_evaluator, model, _stats);
+	create(config, *_feature_evaluator, model, _stats);
+	setup_reward_function(config, model.getTask());
 }
 
 void
@@ -65,7 +69,7 @@ IteratedWidthDriver::search() {
 	return result;
 }
 
-IteratedWidthDriver::EnginePT
+void
 IteratedWidthDriver::create(const Config& config, const IteratedWidthDriver::FeatureEvaluatorT& featureset, const SimpleStateModel& model, lookahead::IteratedWidthStats& stats) {
 	using FeatureValueT = typename bfws::IntNoveltyEvaluatorI::FeatureValueT;
 
@@ -79,8 +83,34 @@ IteratedWidthDriver::create(const Config& config, const IteratedWidthDriver::Fea
     bfws::NoveltyFactory<FeatureValueT> factory(model.getTask(), bfws::SBFWSConfig::NoveltyEvaluatorType::Generic, true, max_novelty);
 	auto evaluator = factory.create_evaluator(max_novelty);
 
-	return EnginePT(new EngineT(model, std::move(featureset), evaluator , cfg, stats, verbose ));
+	_engine = std::make_unique<EngineT>(model, std::move(featureset), evaluator , cfg, stats, verbose );
+	setup_reward_function(config, model.getTask());
 }
+
+void
+IteratedWidthDriver::setup_reward_function( const Config& cfg, const Problem& prob ) {
+	if ( cfg.getOption<bool>("reward.goal_count", false )) {
+		LPT_INFO("search", "Using goal counting reward");
+		std::shared_ptr<Reward> r_func = hybrid::GoalCountSignal::create(prob);
+		_engine->set_reward_function( r_func );
+		return;
+	}
+	if ( cfg.getOption<bool>("reward.goal_error", false )) {
+		LPT_INFO("search", "Using squared goal error reward");
+		std::shared_ptr<Reward> r_func = hybrid::SquaredErrorSignal::create_from_goals(prob);
+		_engine->set_reward_function( r_func );
+		return;
+	}
+	if ( cfg.getOption<bool>("reward.from_metric", false)) {
+		LPT_INFO("search", "Using the specified metric as reward");
+		std::shared_ptr<Reward> r_func = hybrid::StateMetricSignal::create(prob);
+		_engine->set_reward_function( r_func );
+		return;
+	}
+
+	throw std::runtime_error("IteratedWidthDriver::setup_reward_function() : No reward function has been specified!");
+}
+
 
 
 ExitCode
@@ -93,7 +123,7 @@ IteratedWidthDriver::search(const SimpleStateModel& model, const Config& config,
 
 ExitCode
 IteratedWidthDriver::do_search1(const SimpleStateModel& model, const IteratedWidthDriver::FeatureEvaluatorT& featureset, const Config& config, const std::string& out_dir, float start_time) {
-	_engine = create(config, featureset, model, _stats);
+	create(config, featureset, model, _stats);
 
 	return drivers::Utils::do_search(*_engine, model, out_dir, start_time, _stats);
 }
@@ -111,5 +141,6 @@ IteratedWidthDriver::archive_scalar_stats( rapidjson::Document& doc ) {
 	doc.AddMember( "initial_reward", Value(_stats.initial_reward()).Move(), allocator );
 	doc.AddMember( "max_reward", Value(_stats.max_reward()).Move(), allocator );
 }
+
 
 } } } // namespaces

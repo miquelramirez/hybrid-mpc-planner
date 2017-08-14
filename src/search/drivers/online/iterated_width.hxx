@@ -44,8 +44,11 @@ protected:
     ExitCode
     do_search1(const SimpleStateModel& model, const FeatureEvaluatorT& featureset, const Config& config, const std::string& out_dir, float start_time);
 
-    EnginePT
+    void
     create(const Config& config, const FeatureEvaluatorT& featureset, const SimpleStateModel& model, lookahead::IteratedWidthStats& stats);
+
+    void
+    setup_reward_function( const  Config& cfg, const Problem& prob );
 
     EnginePT                                _engine;
     std::shared_ptr<FeatureEvaluatorT>      _feature_evaluator;

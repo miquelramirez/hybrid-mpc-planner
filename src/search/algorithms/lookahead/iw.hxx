@@ -19,7 +19,7 @@
 #include <lapkt/tools/resources_control.hxx>
 #include <lapkt/tools/logging.hxx>
 #include <heuristics/novelty/features.hxx>
-#include <heuristics/novelty/goal_ball_filter.hxx>
+#include <heuristics/reward.hxx>
 
 // For writing the R sets
 #include <utils/archive/json.hxx>
@@ -183,6 +183,8 @@ public:
 
 	using OpenListT = lapkt::SimpleQueue<NodeT>;
 
+	using RewardPT = std::shared_ptr<Reward>;
+
 	struct Config {
 		//! Whether to perform a complete run or a partial one, i.e. up until (independent) satisfaction of all goal atoms.
 		bool _complete;
@@ -202,9 +204,6 @@ public:
 		//! Load R set from file
 		std::string _R_file;
 
-		//! Goal Ball filtering
-		bool _filter_R_set;
-
 		//! Log search
 		bool _log_search;
 
@@ -218,7 +217,6 @@ public:
 			_goal_directed(global_config.getOption<bool>("lookahead.iw.goal_directed", false)),
 			_enforce_state_constraints(global_config.getOption<bool>("lookahead.iw.enforce_state_constraints", true)),
 			_R_file(global_config.getOption<std::string>("lookahead.iw.from_file", "")),
-			_filter_R_set(global_config.getOption<bool>("lookahead.iw.filter", false)),
 			_log_search(global_config.getOption<bool>("lookahead.iw.log", false)),
 			_num_brfs_layers(global_config.getOption<int>("lookahead.iw.layers", 0))
 		{}
@@ -255,6 +253,9 @@ protected:
 	// MRJ: IW(1) debugging
 	std::vector<NodePT>	_visited;
 
+	// MRJ: Reward Function
+	RewardPT	_reward_function;
+
 public:
 
 	//! Constructor
@@ -267,7 +268,8 @@ public:
 		_in_seed(),
 		_evaluator(featureset, evaluator),
 		_stats(stats),
-		_verbose(verbose)
+		_verbose(verbose),
+		_reward_function(nullptr)
 	{
 	}
 
@@ -309,6 +311,26 @@ public:
 			fs0::Config::instance().setZeroCrossingControl(_current_setting);
 		}
 	};
+
+	//!
+	void set_reward_function( RewardPT f ) {
+		_reward_function = f;
+	}
+
+	RewardPT
+	get_reward_function() const {
+		return _reward_function;
+	}
+
+	//! Evaluate reward
+	void evaluate_reward( NodePT n ) const {
+		if ( _reward_function == nullptr ) {
+			n->R = 0.0f;
+			return;
+		}
+		n->R = _reward_function->evaluate(n->state);
+		return;
+	}
 
     //! Convenience method
 	bool solve_model(PlanT& solution) { return search(_model.init(), solution); }
@@ -368,7 +390,7 @@ public:
 // 		LPT_DEBUG("cout", "Simulation - Seed node: " << *root);
 
 		assert(max_width <= 2); // The current swapping-queues method works only for up to width 2, but is trivial to generalize if necessary
-
+		evaluate_reward(root);
         _best_node = root;
 		_stats.set_initial_reward(root->R);
 		OpenListT open_w1, open_w2;
@@ -388,6 +410,7 @@ public:
 					StateT s_a = _model.next( current->state, a );
 					NodePT successor = std::make_shared<NodeT>(std::move(s_a), a, current, _stats.generated());
 					_stats.generation();
+					evaluate_reward(successor);
 
 					unsigned char novelty = _evaluator.evaluate(*successor);
 					update_novelty_counters_on_generation(novelty);
@@ -457,7 +480,9 @@ public:
 				JSONArchive::store(state, allocator, s);
                 {
 					Value v(n->_gen_order);
-					state.AddMember( "gen_order", v, allocator);
+					state.AddMember( "gen_order", v.Move(), allocator);
+					v = Value(n->R);
+					state.AddMember( "reward", v.Move(), allocator);
                 }
                 visits.PushBack(state.Move(), allocator);
             }
@@ -488,6 +513,28 @@ public:
 		}
 		trace.AddMember("optimal_paths", opt_paths, allocator );
 
+		Value selected_path(kArrayType);
+		{
+			Value path(kArrayType);
+			{
+				NodePT node = _best_node;
+
+				while (node->has_parent()) {
+					Value state(kObjectType);
+					JSONArchive::store(state, allocator, node->state);
+					path.PushBack( state.Move(),allocator);
+					node = node->parent;
+				}
+
+				Value s0(kObjectType);
+				JSONArchive::store( s0, allocator, node->state );
+				path.PushBack( s0.Move(), allocator );
+			}
+			selected_path.PushBack(path.Move(),allocator);
+
+		}
+		trace.AddMember("selected_path", selected_path, allocator );
+
 		FILE* fp = fopen( "mv_iw_run.json", "wb"); // non-Windows use "w"
 		char writeBuffer[65536];
 		FileWriteStream os(fp, writeBuffer, sizeof(writeBuffer));
@@ -511,7 +558,6 @@ protected:
 
 			if (_model.goal(state, subgoal_idx)) {
                 // MRJ: Reward function
-                node->R += 1.0;
 				_stats.generation_g_decrease();
 // 				node->satisfies_subgoal = true;
 // 				_all_paths[subgoal_idx].push_back(node);
@@ -535,7 +581,6 @@ protected:
 		for (unsigned i = 0; i < _model.num_subgoals(); ++i) {
 			if (!_in_seed[i] && _model.goal(state, i)) {
 // 				node->satisfies_subgoal = true;
-                node->R += 1.0;
 				_stats.generation_g_decrease();
 				if (!_optimal_paths[i]) _optimal_paths[i] = node;
 				_unreached.erase(i);
