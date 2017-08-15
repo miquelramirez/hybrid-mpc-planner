@@ -92,13 +92,13 @@ void PythonRunner::report_stats(const Problem& problem, const std::string& out_d
 		num_sc_atoms += fs::all_atoms(*sc).size();
 	}
 
-	LPT_INFO("cout", "Number of objects: " << info.num_objects());
-	LPT_INFO("cout", "Number of state variables: " << info.getNumVariables());
-	LPT_INFO("cout", "Number of problem atoms: " << tuple_index.size());
-	LPT_INFO("cout", "Number of action schemata: " << problem.getActionData().size());
-	LPT_INFO("cout", "Number of (perhaps partially) ground actions: " << n_actions);
-	LPT_INFO("cout", "Number of goal atoms: " << num_goal_atoms);
-	LPT_INFO("cout", "Number of state constraint atoms: " << num_sc_atoms);
+	LPT_INFO("main", "Number of objects: " << info.num_objects());
+	LPT_INFO("main", "Number of state variables: " << info.getNumVariables());
+	LPT_INFO("main", "Number of problem atoms: " << tuple_index.size());
+	LPT_INFO("main", "Number of action schemata: " << problem.getActionData().size());
+	LPT_INFO("main", "Number of (perhaps partially) ground actions: " << n_actions);
+	LPT_INFO("main", "Number of goal atoms: " << num_goal_atoms);
+	LPT_INFO("main", "Number of state constraint atoms: " << num_sc_atoms);
 
 
 	json_out << "\t\"num_objects\": " << info.num_objects() << "," << std::endl;
