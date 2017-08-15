@@ -44,6 +44,7 @@ public:
     //! Loads up the data
     void        setup();
     void        set_initial_state( bp::dict& state );
+    bp::dict    get_initial_state();
     void        solve();
 
     //! Properties
@@ -107,6 +108,7 @@ protected:
 
     void        report_stats(const Problem& problem, const std::string& out_dir);
     void        update(Config& cfg);
+    bp::dict    decode_state( const State& s, const ProblemInfo& info );
 private:
 
 

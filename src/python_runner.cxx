@@ -239,6 +239,17 @@ PythonRunner::set_initial_state( bp::dict& new_state ) {
     LPT_INFO("search", "Initial state set:" << *_state );
 }
 
+bp::dict
+PythonRunner::get_initial_state() {
+    if ( _problem == nullptr ) {
+        throw std::runtime_error("[PythonRunner::get_initial_state] Error: before setting states it is necessary to setup the planner");
+    }
+    SingletonLock lock(*this);
+    if ( _state == nullptr )
+        throw std::runtime_error("[PythonRunner::get_initial_state] Error: No initial state was set");
+    const ProblemInfo& info = ProblemInfo::getInstance();
+    return decode_state( *_state, info );
+}
 
 void
 PythonRunner::solve() {
@@ -442,6 +453,28 @@ PythonRunner::solve_with_ompl_planner() {
 
 }
 
+bp::dict
+PythonRunner::decode_state( const State& s, const ProblemInfo& info ) {
+    bp::dict py_s;
+    for ( unsigned x = 0; x < info.getNumVariables(); x++ ) {
+        object_id value = s.getValue(x);
+        type_id var_type = info.sv_type(x);
+
+        if (var_type == type_id::bool_t) {
+            py_s[info.getVariableName(x)] = fs0::value<bool>(value);
+        } else if (var_type == type_id::float_t) {
+            py_s[info.getVariableName(x)] = fs0::value<float>(value);
+        }
+        else if (var_type == type_id::int_t) {
+            py_s[info.getVariableName(x)] = fs0::value<int>(value);
+        }
+        else if (var_type == type_id::object_t) {
+            py_s[info.getVariableName(x)] = info.object_name(value);
+        }
+    }
+    return py_s;
+}
+
 bp::list
 PythonRunner::simulate_plan( double duration, double step_size ) {
     SingletonLock lock(*this);
@@ -460,23 +493,7 @@ PythonRunner::simulate_plan( double duration, double step_size ) {
 
     for ( unsigned k = 0; k < _native_plan.trajectory().size(); k++ ) {
         auto s_k = _native_plan.trajectory()[k];
-        bp::dict py_s_k;
-        for ( unsigned x = 0; x < info.getNumVariables(); x++ ) {
-            object_id value = s_k->getValue(x);
-            type_id var_type = info.sv_type(x);
-
-    		if (var_type == type_id::bool_t) {
-                py_s_k[info.getVariableName(x)] = fs0::value<bool>(value);
-    		} else if (var_type == type_id::float_t) {
-                py_s_k[info.getVariableName(x)] = fs0::value<float>(value);
-    		}
-    		else if (var_type == type_id::int_t) {
-                py_s_k[info.getVariableName(x)] = fs0::value<int>(value);
-    		}
-    		else if (var_type == type_id::object_t) {
-                py_s_k[info.getVariableName(x)] = info.object_name(value);
-    		}
-        }
+        bp::dict py_s_k = decode_state( *s_k, info );
         py_trace.append(py_s_k);
     }
     _simulation_time = aptk::time_used() - t0;
