@@ -374,11 +374,11 @@ public:
 
 
 	bool run(const StateT& seed, unsigned max_width, bool lookahead) {
-		if (_verbose) LPT_INFO("cout", "Simulation - Starting IW Simulation");
+		if (_verbose) LPT_INFO("search", "Simulation - Starting IW Simulation");
 
 		std::shared_ptr<DeactivateZCC> zcc_setting = nullptr;
 		if (!_config._enforce_state_constraints ) {
-			LPT_INFO("cout", ":Simulation - Deactivating zero crossing control");
+			LPT_INFO("search", ":Simulation - Deactivating zero crossing control");
 			zcc_setting = std::make_shared<DeactivateZCC>();
 		}
 
@@ -427,7 +427,7 @@ public:
 					unsigned char novelty = _evaluator.evaluate(*successor);
 					update_novelty_counters_on_generation(novelty);
 
-					// LPT_INFO("cout", "Simulation - Node generated: " << *successor);
+					// LPT_INFO("search", "Simulation - Node generated: " << *successor);
 					if (_config._log_search )
 						_visited.push_back(successor);
 
@@ -472,11 +472,11 @@ public:
 
 	void report(const std::string& result) const {
 		if (!_verbose) return;
-		LPT_INFO("cout", "Simulation - Result: " << result);
-		LPT_INFO("cout", "Simulation - Num reached subgoals: " << (_model.num_subgoals() - _unreached.size()) << " / " << _model.num_subgoals());
-		LPT_INFO("cout", "Simulation - Generated nodes with w=1 " << _stats.num_w1_nodes());
-		LPT_INFO("cout", "Simulation - Generated nodes with w=2 " << _stats.num_w2_nodes());
-		LPT_INFO("cout", "Simulation - Generated nodes with w>2 " << _stats.num_wgt2_nodes());
+		LPT_INFO("search", "Simulation - Result: " << result);
+		LPT_INFO("search", "Simulation - Num reached subgoals: " << (_model.num_subgoals() - _unreached.size()) << " / " << _model.num_subgoals());
+		LPT_INFO("search", "Simulation - Generated nodes with w=1 " << _stats.num_w1_nodes());
+		LPT_INFO("search", "Simulation - Generated nodes with w=2 " << _stats.num_w2_nodes());
+		LPT_INFO("search", "Simulation - Generated nodes with w>2 " << _stats.num_wgt2_nodes());
 		if (! _config._log_search ) return;
 
 		using namespace rapidjson;
