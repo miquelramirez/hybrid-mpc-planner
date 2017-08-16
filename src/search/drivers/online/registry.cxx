@@ -13,13 +13,6 @@
 
 namespace fs0 { namespace drivers { namespace online {
 
-
-
-EngineRegistry& EngineRegistry::instance() {
-	static EngineRegistry theInstance;
-	return theInstance;
-}
-
 EngineRegistry::EngineRegistry() {
 	// We register the pre-configured search drivers on the instantiation of the singleton
 	add("iw",  new IteratedWidthDriver());

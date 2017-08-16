@@ -25,6 +25,7 @@ class SingletonLock {
 public:
     SingletonLock( PythonRunner& r )
         : _runner(r) {
+            lapkt::tools::Logger::set_instance( std::move(_runner._logger));
             fstrips::LanguageInfo::setInstance( std::move(_runner._lang_info ));
             ProblemInfo::setInstance( std::move(_runner._problem_info));
             Problem::setInstance( std::move(_runner._problem) );
@@ -36,6 +37,7 @@ public:
         _runner._lang_info = fstrips::LanguageInfo::claimOwnership();
         _runner._problem = Problem::claimOwnership();
         _runner._instance_config = Config::claimOwnership();
+        _runner._logger = lapkt::tools::Logger::claim_ownership();
     }
 };
 
@@ -138,11 +140,14 @@ PythonRunner::update( Config& config ) {
 
 void
 PythonRunner::setup() {
+    if (_current_driver != nullptr )
+        throw std::runtime_error("[PythonRunner::setup] was called twice on the same object" ) ;
     /* code */
     float t0 = aptk::time_used();
 
-    lapkt::tools::Logger::init(_options.getOutputDir() + "/logs");
-    Config::init(_options.getDriver(), _options.getUserOptions(), _options.getDefaultConfigurationFilename());
+    _logger = std::make_unique<lapkt::tools::Logger>(_options.getOutputDir() + "/logs");
+    lapkt::tools::Logger::set_instance(std::move(_logger));
+    //lapkt::tools::Logger::init(_options.getOutputDir() + "/logs");
 
     // MRJ: The following two lines make up for the method Config::init()
     _instance_config = std::unique_ptr<Config>(new Config(_options.getDriver(), _options.getUserOptions(), _options.getDefaultConfigurationFilename()));
@@ -162,23 +167,23 @@ PythonRunner::setup() {
     update( config );
 
     LPT_INFO("main", "[PythonRunner::setup] Grounding Actions....");
-    _state_model = std::make_shared<SimpleStateModel>(drivers::GroundingSetup::fully_ground_simple_model(*problem));
-
+    _problem = Problem::claimOwnership();
+    _state_model = std::make_shared<SimpleStateModel>(drivers::GroundingSetup::fully_ground_simple_model(*_problem));
     LPT_INFO("main", "[PythonRunner::setup] Indexing state variables..." );
     index_state_variables();
 
     LPT_INFO("main", "[PythonRunner::setup] Preparing Search Engine....");
-    _current_driver = online::EngineRegistry::instance().get(_options.getDriver());
+    _current_driver = _available_engines.get(_options.getDriver());
     _current_driver->prepare(*_state_model, config, _options.getOutputDir());
-
     _setup_time = aptk::time_used() - t0;
     LPT_INFO("main", "[PythonRunner::setup] Finished!" );
     // Singleton management: note that we're not using the Lock class because
     // the pointers are initialised during this method
     _lang_info = fstrips::LanguageInfo::claimOwnership();
     _problem_info = ProblemInfo::claimOwnership();
-    _problem = Problem::claimOwnership();
+
     _instance_config = Config::claimOwnership();
+    _logger = lapkt::tools::Logger::claim_ownership();
 }
 
 void
@@ -237,6 +242,7 @@ PythonRunner::set_initial_state( bp::dict& new_state ) {
     }
     _state->accumulate(facts);
     LPT_INFO("search", "Initial state set:" << *_state );
+
 }
 
 bp::dict
@@ -260,7 +266,6 @@ PythonRunner::solve() {
     float t0 = aptk::time_used();
     //Config& config = Config::instance();
     //ExitCode code = _current_driver->search(*_state_model, config, _options.getOutputDir(), 0.0f);
-
     ExitCode code = _current_driver->search();
     _current_driver->archive_results_JSON( "results.json" );
     _native_plan.interpret_plan( _current_driver->plan );

@@ -221,10 +221,10 @@ public:
 			_num_brfs_layers(global_config.getOption<int>("lookahead.iw.layers", 0))
 		{}
 	};
-
-protected:
 	//! The search model
 	const StateModel& _model;
+protected:
+
 
 	//! The simulation configuration
 	Config _config;
@@ -284,10 +284,12 @@ public:
 	~IW() = default;
 
 	// Disallow copy, but allow move
+	IW() = delete;
+	IW(IW&) = delete;
 	IW(const IW&) = delete;
-	IW(IW&&) = default;
+	IW(IW&&) = delete;
 	IW& operator=(const IW&) = delete;
-	IW& operator=(IW&&) = default;
+	IW& operator=(IW&&) = delete;
 
 	std::vector<NodePT> extract_seed_nodes() {
 		std::vector<NodePT> seed_nodes;
@@ -416,7 +418,6 @@ public:
 				// Expand the node
 				update_novelty_counters_on_expansion(current->_w);
 				_stats.expansion();
-
 				for (const auto& a : _model.applicable_actions(current->state, _config._enforce_state_constraints)) {
 					StateT s_a = _model.next( current->state, a );
 					NodePT successor = std::make_shared<NodeT>(std::move(s_a), a, current, _stats.generated());

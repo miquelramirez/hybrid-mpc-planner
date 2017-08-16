@@ -7,6 +7,7 @@
 #include <fstrips/language_info.hxx>
 #include <models/simple_state_model.hxx>
 #include <search/drivers/base.hxx>
+#include <search/drivers/online/registry.hxx>
 #include <search/runner.hxx>
 #include <search/options.hxx>
 #include <utils/config.hxx>
@@ -18,6 +19,12 @@
 #include <map>
 
 namespace bp = boost::python;
+
+namespace lapkt {
+    namespace tools {
+        class Logger;
+    }
+}
 
 namespace fs0 {
     class Problem;
@@ -115,6 +122,7 @@ private:
     bp::list                                _plan;
     dynamics::HybridPlan                    _native_plan;
     EngineOptions                           _options;
+    online::EngineRegistry                  _available_engines;
     double                                  _setup_time;
     double                                  _search_time;
     double                                  _simulation_time;
@@ -129,6 +137,7 @@ private:
     std::unique_ptr<ProblemInfo>            _problem_info;
     std::unique_ptr<fstrips::LanguageInfo>  _lang_info;
     std::unique_ptr<Problem>                _problem;
+    std::unique_ptr<lapkt::tools::Logger>   _logger;
     std::map< std::string, VariableIdx >    _var_index;
     std::unique_ptr<Config>                 _instance_config;
     EmbeddedDriver*                         _current_driver;

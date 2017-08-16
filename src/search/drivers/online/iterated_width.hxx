@@ -38,6 +38,7 @@ public:
     virtual void archive_scalar_stats( rapidjson::Document& doc ) override;
 
     virtual ~IteratedWidthDriver();
+    EnginePT                                _engine;
 protected:
 	lookahead::IteratedWidthStats _stats;
 
@@ -50,7 +51,7 @@ protected:
     void
     setup_reward_function( const  Config& cfg, const Problem& prob );
 
-    EnginePT                                _engine;
+
     std::shared_ptr<FeatureEvaluatorT>      _feature_evaluator;
 };
 

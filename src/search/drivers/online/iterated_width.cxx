@@ -25,18 +25,22 @@ IteratedWidthDriver::prepare(const SimpleStateModel& model, const Config& config
 	_feature_evaluator = std::make_shared<FeatureEvaluatorT>();
 	selector.select(*_feature_evaluator);
 	create(config, *_feature_evaluator, model, _stats);
-	setup_reward_function(config, model.getTask());
+	//setup_reward_function(config, model.getTask());
+	//LPT_INFO("search", "[IteratedWidthDriver::prepare()(" << this << ")] Pointer to problem associated with engine "
+	//					<< _engine.get() << " is " << &(_engine->_model.getTask()) << " via model " << &model);
 }
 
 void
 IteratedWidthDriver::dispose(/* arguments */) {
-	_engine.reset(nullptr);
+	//_engine.reset(nullptr);
+	_engine = nullptr;
 }
 
 ExitCode
 IteratedWidthDriver::search() {
-
-	if ( _engine == nullptr ) {
+	//LPT_INFO("search", "[IteratedWidthDriver::search()(" << this << ")] Pointer to problem associated with engine "
+	//					<< _engine.get() << " is " << &(_engine->_model.getTask()) << " via model " << &(_engine->_model));
+	if ( _engine.get() == nullptr ) {
 		throw std::runtime_error("[IteratedWidthDriver::search()]: search engine was not prepared!");
 	}
 	LPT_INFO("search", "Resetting search call statistics cached in driver...");
@@ -85,6 +89,8 @@ IteratedWidthDriver::create(const Config& config, const IteratedWidthDriver::Fea
 
 	_engine = std::make_unique<EngineT>(model, std::move(featureset), evaluator , cfg, stats, verbose );
 	setup_reward_function(config, model.getTask());
+	//LPT_INFO("search", "[IteratedWidthDriver::create()(" << this << ")] Pointer to problem associated with engine "
+	//					<< _engine.get() << " is " << &(_engine->_model.getTask()) << " via model " << &model);
 }
 
 void
