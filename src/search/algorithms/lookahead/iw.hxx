@@ -205,6 +205,9 @@ public:
 		unsigned _max_width;
 
 		//!
+		unsigned _max_depth;
+
+		//!
 		const fs0::Config& _global_config;
 
 		//! Whether to extract goal-informed relevant sets R
@@ -222,16 +225,24 @@ public:
 		//! BrFS layers
 		unsigned _num_brfs_layers;
 
+		//! Pivot on rewards
+		bool	 _pivot_on_rewards;
+
 		Config(bool complete, unsigned max_width, const fs0::Config& global_config) :
 			_complete(complete),
 			_max_width(max_width),
+			_max_depth(global_config.getOption<int>("lookahead.iw.max_depth",std::numeric_limits<unsigned>::max())),
 			_global_config(global_config),
 			_goal_directed(global_config.getOption<bool>("lookahead.iw.goal_directed", false)),
 			_enforce_state_constraints(global_config.getOption<bool>("lookahead.iw.enforce_state_constraints", true)),
 			_R_file(global_config.getOption<std::string>("lookahead.iw.from_file", "")),
 			_log_search(global_config.getOption<bool>("lookahead.iw.log", false)),
-			_num_brfs_layers(global_config.getOption<int>("lookahead.iw.layers", 0))
-		{}
+			_num_brfs_layers(global_config.getOption<int>("lookahead.iw.layers", 0)),
+			_pivot_on_rewards(global_config.getOption<bool>("lookahead.iw.pivot_on_rewards", false))
+		{
+			if (_num_brfs_layers > 0 && _pivot_on_rewards )
+				throw std::runtime_error("[IW::Config]  BrFS layers and pivot options are mutually exclusive");
+		}
 	};
 	//! The search model
 	const StateModel& _model;
@@ -352,6 +363,29 @@ public:
 	bool search(const StateT& s, PlanT& plan) {
         _best_node = nullptr; // Make sure we start assuming no solution found
 		NodePT top_level = std::make_shared<NodeT>(s, _stats.generated());
+
+		if ( _config._pivot_on_rewards ) {
+			NodePT current_best = _best_node;
+			run(s, _config._max_width, nullptr, (ActionIdT)0);
+			LPT_INFO("search", "Finished first run: max R(s)=" << _best_node->R << " visited: " << _visited.size() );
+			std::vector<NodePT> _(_optimal_paths.size(), nullptr);
+			_optimal_paths.swap(_);
+			_evaluator.reset();
+			while ( _best_node != current_best ){
+				current_best = _best_node;
+				for (const auto& a : _model.applicable_actions(current_best->state, _config._enforce_state_constraints)) {
+					StateT s_a = _model.next( current_best->state, a );
+					_stats.generation();
+
+					run(s_a, _config._max_width, current_best, a);
+					LPT_INFO("search", "Finished run: max R(s)=" << _best_node->R << " visited: " << _visited.size() );
+					std::vector<NodePT> _(_optimal_paths.size(), nullptr);
+					_optimal_paths.swap(_);
+					_evaluator.reset();
+				}
+			}
+			return extract_plan( _best_node, plan );
+		}
 
 		if ( _config._num_brfs_layers > 0 ) {
 			for (const auto& a : _model.applicable_actions(s, _config._enforce_state_constraints)) {
