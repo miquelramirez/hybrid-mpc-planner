@@ -72,6 +72,18 @@ public:
 	IWNode(const StateT& s, unsigned long gen_order) : IWNode(StateT(s), ActionT::invalid_action_id, nullptr, gen_order) {}
 
 	//! Constructor with move of the state (cheaper)
+	IWNode(const StateT& s, typename ActionT::IdType _action, PT _parent, uint32_t gen_order) :
+		state(s),
+		action(_action),
+		parent(_parent),
+		g(parent ? parent->g+1 : 0),
+		_w(std::numeric_limits<unsigned char>::max()),
+        R(0.0f),
+		_gen_order(gen_order)
+	{
+		assert(_gen_order > 0); // Very silly way to detect overflow, in case we ever generate > 4 billion nodes :-)
+	}
+	//! Constructor with move of the state (cheaper)
 	IWNode(StateT&& _state, typename ActionT::IdType _action, PT _parent, uint32_t gen_order) :
 		state(std::move(_state)),
 		action(_action),
@@ -339,20 +351,21 @@ public:
 
 	bool search(const StateT& s, PlanT& plan) {
         _best_node = nullptr; // Make sure we start assuming no solution found
+		NodePT top_level = std::make_shared<NodeT>(s, _stats.generated());
 
 		if ( _config._num_brfs_layers > 0 ) {
 			for (const auto& a : _model.applicable_actions(s, _config._enforce_state_constraints)) {
 				StateT s_a = _model.next( s, a );
 				_stats.generation();
 
-	        	run(s_a, _config._max_width, true);
+	        	run(s_a, _config._max_width, top_level, a);
 				std::vector<NodePT> _(_optimal_paths.size(), nullptr);
 				_optimal_paths.swap(_);
 				_evaluator.reset();
 			}
 		}
 		else
-			run(s, _config._max_width,false);
+			run(s, _config._max_width, nullptr, (ActionIdT)0);
 		return extract_plan( _best_node, plan);
 	}
 
@@ -372,8 +385,7 @@ public:
         return true;
     }
 
-
-	bool run(const StateT& seed, unsigned max_width, bool lookahead) {
+	bool run(const StateT& seed, unsigned max_width, NodePT top_level, ActionIdT a ) {
 		if (_verbose) LPT_INFO("search", "Simulation - Starting IW Simulation");
 
 		std::shared_ptr<DeactivateZCC> zcc_setting = nullptr;
@@ -382,7 +394,12 @@ public:
 			zcc_setting = std::make_shared<DeactivateZCC>();
 		}
 
-		NodePT root = std::make_shared<NodeT>(seed, _stats.generated());
+		NodePT root;
+		if ( top_level == nullptr )
+			root = std::make_shared<NodeT>(seed, _stats.generated());
+		else
+			root = std::make_shared<NodeT>( seed, a, top_level, _stats.generated());
+
 		_stats.generation();
 		mark_seed_subgoals(root);
 
@@ -393,7 +410,7 @@ public:
 // 		LPT_DEBUG("cout", "Simulation - Seed node: " << *root);
 
 		assert(max_width <= 2); // The current swapping-queues method works only for up to width 2, but is trivial to generalize if necessary
-		if (!lookahead) {
+		if (top_level == nullptr ) {
 			evaluate_reward(root);
 			_stats.set_initial_reward(root->R);
 	        _best_node = root;
