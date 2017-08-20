@@ -171,7 +171,8 @@ PythonRunner::setup() {
     _state_model = std::make_shared<SimpleStateModel>(drivers::GroundingSetup::fully_ground_simple_model(*_problem));
     LPT_INFO("main", "[PythonRunner::setup] Indexing state variables..." );
     index_state_variables();
-
+    std::string option_value = Config::instance().getOption<bool>("dynamics.decompose_ode", false) ? "yes" : "no";
+    LPT_INFO( "main", "[PythonRunner::setup] Decomposing ODEs?: " << option_value);
     LPT_INFO("main", "[PythonRunner::setup] Preparing Search Engine....");
     _current_driver = _available_engines.get(_options.getDriver());
     _current_driver->prepare(*_state_model, config, _options.getOutputDir());
