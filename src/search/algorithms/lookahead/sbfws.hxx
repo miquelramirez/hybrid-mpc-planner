@@ -13,6 +13,7 @@
 
 #include <search/drivers/sbfws/stats.hxx>
 #include <heuristics/reward.hxx>
+#include <search/algorithms/lookahead/treelog.hxx>
 
 namespace fs0 { namespace lookahead {
 
@@ -252,6 +253,15 @@ public:
 		for (auto& elem:_wgr_novelty_evaluators) for (auto& p:elem) delete p.second;
 	};
 
+	void
+	reset() {
+		for ( unsigned i = 0; i < _wg_novelty_evaluators.size(); i++ )
+			for ( auto entry :  _wg_novelty_evaluators[i] )
+				entry.second->reset();
+		for ( unsigned i = 0; i < _wgr_novelty_evaluators.size(); i++ )
+			for ( auto entry :  _wgr_novelty_evaluators[i] )
+				entry.second->reset();
+	}
 
 	template <typename NodeT>
 	unsigned evaluate_wg1(NodeT& node) {
@@ -481,6 +491,7 @@ public:
 	using SimulationNodePT = typename HeuristicT::IWNodePT;
 	using RewardPT = std::shared_ptr<Reward>;
 
+	std::vector<NodePT> _visited;
 protected:
 
 // An open list sorted by #g
@@ -500,7 +511,7 @@ protected:
 	//! The solution node, if any. This will be set during the search process
 	NodePT _solution;
 	//! Best node found
-	NodePT _best_found;
+	NodePT _best_node;
 
 	//! A list with all nodes that have novelty w_{#g}=1
 	UnachievedOpenList _q1;
@@ -532,6 +543,8 @@ protected:
 	bool _pruning;
 	uint32_t _max_generations;
 
+	//! Log search
+	bool 				_log_search;
 	//! The number of generated nodes so far
 	uint32_t _generated;
 
@@ -545,6 +558,7 @@ protected:
 	RewardPT	_reward_function;
 
 
+
 public:
 
 	//!
@@ -556,12 +570,13 @@ public:
 
 		_model(model),
 		_solution(nullptr),
-        	_best_found(nullptr),
+        	_best_node(nullptr),
 		_featureset(std::move(featureset)),
 		_heuristic(conf, config, model, _featureset, stats),
 		_stats(stats),
 		_pruning(config.getOption<bool>("bfws.prune", false)),
 		_max_generations(config.getOption<int>("bfws.max_generations", 10000) ),
+		_log_search(config.getOption<bool>("lookahead.bfws.log", false)),
 		_generated(1),
 		_min_subgoals_to_reach(std::numeric_limits<unsigned>::max()),
 		_novelty_levels(setup_novelty_levels(model, config)),
@@ -574,6 +589,8 @@ public:
 	SBFWS(SBFWS&&) = default;
 	SBFWS& operator=(const SBFWS&) = delete;
 	SBFWS& operator=(SBFWS&&) = default;
+
+	NodePT get_best_node() const { return _best_node; }
 
 	unsigned setup_novelty_levels(const StateModelT& model, const Config& config) const {
 		const AtomIndex& atomidx = model.getTask().get_tuple_index();
@@ -629,6 +646,21 @@ public:
 	bool solve_model(PlanT& solution) { return search(_model.init(), solution); }
 
 	bool search(const StateT& s, PlanT& plan) {
+		_solution = nullptr;
+		_best_node = nullptr;
+		while ( !_q1.empty() )
+			_q1.next();
+		while ( !_qwgr1.empty() )
+			_qwgr1.next();
+		while ( !_qwgr2.empty() )
+			_qwgr2.next();
+		while ( !_qrest.empty() )
+			_qrest.next();
+		_closed.clear();
+		_generated = 0;
+		_visited.clear();
+		_heuristic.reset();
+
 		NodePT root = std::make_shared<NodeT>(s, ++_generated);
 		create_node(root);
 		LPT_INFO("search", "Search root node: " << *root);
@@ -644,13 +676,13 @@ public:
 
 
 		// The main search loop
-		_solution = nullptr; // Make sure we start assuming no solution found
-
 		for (bool remaining_nodes = true; !_solution && remaining_nodes;) {
 			remaining_nodes = process_one_node();
 		}
+		// Dump optimal_paths and visited into JSON document
+		dump_search_tree( *this, "bfws.lookahead.json");
 		if ( _solution == nullptr )
-			return extract_plan(_best_found, plan);
+			return extract_plan(_best_node, plan);
 
 		return extract_plan(_solution, plan);
 	}
@@ -659,12 +691,12 @@ protected:
 
     void update_best_node( const NodePT& node ) {
 		_stats.reward(node->R);
-		if ( _best_found == nullptr ) {
-			_best_found = node;
+		if ( _best_node == nullptr ) {
+			_best_node = node;
 			return;
 		}
-        if ( node->R > _best_found->R )
-            _best_found = node;
+        if ( node->R > _best_node->R )
+            _best_node = node;
     }
 	//! Process one node from some of the queues, according to their priorities
 	//! Returns true if some action has been performed, false if all queues were empty
@@ -755,7 +787,7 @@ protected:
 	bool create_node(const NodePT& node) {
 		if (is_goal(node)) {
 			LPT_INFO("search", "Goal node was found");
-			_solution = node;
+			_solution = _best_node = node;
 			return true;
 		}
 		node->unachieved_subgoals = _heuristic.compute_unachieved(node->state);
@@ -785,6 +817,8 @@ protected:
         evaluate_reward(node);
         _stats.reward(node->R);
         update_best_node(node);
+		if (_log_search )
+			_visited.push_back(node);
 		return false;
 	}
 

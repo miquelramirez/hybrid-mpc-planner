@@ -91,6 +91,7 @@ SConscript( 'ompl_dependencies' )
 SConscript( 'src/SConscript')
 SConscript( 'src/search/drivers/online/SConscript')
 SConscript( 'src/search/algorithms/lookahead/SConscript')
+SConscript( 'src/utils/SConscript')
 
 
 env.SharedLibrary(lib_name, src_objs )

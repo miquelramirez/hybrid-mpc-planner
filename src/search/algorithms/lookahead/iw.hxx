@@ -21,8 +21,8 @@
 #include <heuristics/novelty/features.hxx>
 #include <heuristics/reward.hxx>
 
-// For writing the R sets
-#include <utils/archive/json.hxx>
+// For logging search trees
+#include <search/algorithms/lookahead/treelog.hxx>
 
 namespace fs0 { namespace lookahead {
 
@@ -197,6 +197,10 @@ public:
 
 	using RewardPT = std::shared_ptr<Reward>;
 
+
+	// MRJ: IW(1) debugging
+	std::vector<NodePT>	_visited;
+
 	struct Config {
 		//! Whether to perform a complete run or a partial one, i.e. up until (independent) satisfaction of all goal atoms.
 		bool _complete;
@@ -271,8 +275,6 @@ protected:
 	//! Whether to print some useful extra information or not
 	bool _verbose;
 
-	// MRJ: IW(1) debugging
-	std::vector<NodePT>	_visited;
 
 	// MRJ: Reward Function
 	RewardPT	_reward_function;
@@ -292,6 +294,10 @@ public:
 		_verbose(verbose),
 		_reward_function(nullptr)
 	{
+	}
+
+	NodePT get_best_node() const {
+		return _best_node;
 	}
 
 	void reset() {
@@ -529,15 +535,6 @@ public:
 		else _stats.wgt2_node();
 	}
 
-	void archive_node( rapidjson::Value& obj, rapidjson::Document::AllocatorType& allocator, NodePT node ) const {
-		using namespace rapidjson;
-		JSONArchive::store(obj, allocator, node->state);
-		Value v(node->_gen_order);
-		obj.AddMember( "gen_order", v.Move(), allocator);
-		v = Value(node->R);
-		obj.AddMember( "reward", v.Move(), allocator);
-	}
-
 	void report(const std::string& result) const {
 		if (!_verbose) return;
 		LPT_INFO("search", "Simulation - Result: " << result);
@@ -546,78 +543,8 @@ public:
 		LPT_INFO("search", "Simulation - Generated nodes with w=2 " << _stats.num_w2_nodes());
 		LPT_INFO("search", "Simulation - Generated nodes with w>2 " << _stats.num_wgt2_nodes());
 		if (! _config._log_search ) return;
-
-		using namespace rapidjson;
-
 		// Dump optimal_paths and visited into JSON document
-		const ProblemInfo& info = ProblemInfo::getInstance();
-		Document trace;
-		Document::AllocatorType& allocator = trace.GetAllocator();
-		trace.SetObject();
-		Value domainName;
-		domainName.SetString(StringRef(info.getDomainName().c_str()));
-		trace.AddMember("domain", domainName.Move(), allocator );
-		Value instanceName;
-		instanceName.SetString(StringRef(info.getInstanceName().c_str()));
-		trace.AddMember("instance", instanceName.Move(), allocator );
-		Value visits(kArrayType);
-        {
-            for ( auto n : _visited ) {
-                Value state(kObjectType);
-				archive_node( state, allocator, n );
-				visits.PushBack(state.Move(), allocator);
-            }
-        }
-        trace.AddMember("visited", visits, allocator);
-		Value opt_paths(kArrayType);
-		{
-			for ( auto path_to_sub_goal : _optimal_paths ) {
-				if ( path_to_sub_goal == nullptr ) continue;
-				Value path(kArrayType);
-				{
-					NodePT node = path_to_sub_goal;
-
-					while (node->has_parent()) {
-						Value state(kObjectType);
-						archive_node( state, allocator, node );
-						path.PushBack( state.Move(),allocator);
-						node = node->parent;
-					}
-
-					Value s0(kObjectType);
-					archive_node( s0, allocator, node );
-					path.PushBack( s0.Move(), allocator );
-				}
-				opt_paths.PushBack(path.Move(),allocator);
-			}
-
-		}
-		trace.AddMember("optimal_paths", opt_paths, allocator );
-
-		Value selected_path(kArrayType);
-		{
-			NodePT node = _best_node;
-
-			while (node->has_parent()) {
-				Value state(kObjectType);
-				archive_node( state, allocator, node );
-				selected_path.PushBack( state.Move(),allocator);
-				node = node->parent;
-			}
-
-			Value s0(kObjectType);
-			archive_node( s0, allocator, node );
-			selected_path.PushBack(s0.Move(),allocator);
-
-		}
-		trace.AddMember("selected_path", selected_path, allocator );
-
-		FILE* fp = fopen( "mv_iw_run.json", "wb"); // non-Windows use "w"
-		char writeBuffer[65536];
-		FileWriteStream os(fp, writeBuffer, sizeof(writeBuffer));
-		Writer<FileWriteStream> writer(os);
-		trace.Accept(writer);
-		fclose(fp);
+		dump_search_tree( *this, "iw.lookahead.json");
 	}
 
 protected:
