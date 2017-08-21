@@ -2,6 +2,7 @@
 #include <problem.hxx>
 #include <search/drivers/online/registry.hxx>
 #include <search/drivers/online/iterated_width.hxx>
+#include <search/drivers/online/sim_bfws.hxx>
 #include <search/drivers/breadth_first_search.hxx>
 #include <search/drivers/sbfws/sbfws.hxx>
 #include <actions/grounding.hxx>
@@ -16,6 +17,7 @@ namespace fs0 { namespace drivers { namespace online {
 EngineRegistry::EngineRegistry() {
 	// We register the pre-configured search drivers on the instantiation of the singleton
 	add("iw",  new IteratedWidthDriver());
+	add("sbfws",  new SimBFWSDriver());
 }
 
 EngineRegistry::~EngineRegistry() {

@@ -240,8 +240,6 @@ public:
 			_num_brfs_layers(global_config.getOption<int>("lookahead.iw.layers", 0)),
 			_pivot_on_rewards(global_config.getOption<bool>("lookahead.iw.pivot_on_rewards", false))
 		{
-			if (_num_brfs_layers > 0 && _pivot_on_rewards )
-				throw std::runtime_error("[IW::Config]  BrFS layers and pivot options are mutually exclusive");
 		}
 	};
 	//! The search model
@@ -365,9 +363,28 @@ public:
 		NodePT top_level = std::make_shared<NodeT>(s, _stats.generated());
 
 		if ( _config._pivot_on_rewards ) {
+			LPT_INFO("search", "Pivoting on rewards...");
 			NodePT current_best = _best_node;
-			run(s, _config._max_width, nullptr, (ActionIdT)0);
-			LPT_INFO("search", "Finished first run: max R(s)=" << _best_node->R << " visited: " << _visited.size() );
+			if ( _config._num_brfs_layers > 0 ) {
+				LPT_INFO("search", "Using the lookahead...");
+				unsigned num_app_root = 0;
+				for (const auto& a : _model.applicable_actions(s, _config._enforce_state_constraints)) {
+					StateT s_a = _model.next( s, a );
+					_stats.generation();
+
+		        	run(s_a, _config._max_width, top_level, a);
+					LPT_INFO("search", "Finished run " << ++num_app_root << ": max R(s)=" << _best_node->R << " visited: " << _visited.size() );
+					std::vector<NodePT> _(_optimal_paths.size(), nullptr);
+					_optimal_paths.swap(_);
+					_evaluator.reset();
+					LPT_INFO("search", "Run finished for action: #" << num_app_root);
+				}
+				LPT_INFO("search", "Number of applicable actions: " << num_app_root);
+			}
+			else {
+				run(s, _config._max_width, nullptr, (ActionIdT)0);
+				LPT_INFO("search", "Finished first run: max R(s)=" << _best_node->R << " visited: " << _visited.size() );
+			}
 			std::vector<NodePT> _(_optimal_paths.size(), nullptr);
 			_optimal_paths.swap(_);
 			_evaluator.reset();
