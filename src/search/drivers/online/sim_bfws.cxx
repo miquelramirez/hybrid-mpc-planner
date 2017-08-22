@@ -76,7 +76,7 @@ SimBFWSDriver::search() {
 
 void
 SimBFWSDriver::create(const Config& config, const SimpleStateModel& model, bfws::BFWSStats& stats) {
-	using FeatureValueT = typename bfws::IntNoveltyEvaluatorI::FeatureValueT;
+	//using FeatureValueT = typename bfws::IntNoveltyEvaluatorI::FeatureValueT;
     bfws::SBFWSConfig bfws_config(config);
 
 

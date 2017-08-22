@@ -398,7 +398,7 @@ public:
 			else  { assert(_sbfwsconfig.simulation_width); _stats.sim_table_created(1); }
 
 
-			SimulationT simulator(_model, _featureset, evaluator, _simconfig, _stats, true);//verbose);
+			SimulationT simulator(_model, _featureset, evaluator, _simconfig, _stats, verbose);
 
 
 			node._helper = new AtomsetHelper(_problem.get_tuple_index(), simulator.compute_R(node.state));
@@ -541,6 +541,7 @@ protected:
 
 	//! Whether we want to prune those nodes with novelty w_{#g, #r} > 2 or not
 	bool _pruning;
+	bool _lazy_iw_1_search;
 	uint32_t _max_generations;
 
 	//! Log search
@@ -575,6 +576,7 @@ public:
 		_heuristic(conf, config, model, _featureset, stats),
 		_stats(stats),
 		_pruning(config.getOption<bool>("bfws.prune", false)),
+		_lazy_iw_1_search(config.getOption<bool>("bfws.lazy_iw_1", true)),
 		_max_generations(config.getOption<int>("bfws.max_generations", 10000) ),
 		_log_search(config.getOption<bool>("lookahead.bfws.log", false)),
 		_generated(1),
@@ -680,7 +682,9 @@ public:
 			remaining_nodes = process_one_node();
 		}
 		// Dump optimal_paths and visited into JSON document
-		dump_search_tree( *this, "bfws.lookahead.json");
+		LPT_INFO("search", "Call to BFWS finished, generated=" << _stats.generated());
+		if (_log_search)
+			dump_search_tree( *this, "bfws.lookahead.json");
 		if ( _solution == nullptr )
 			return extract_plan(_best_node, plan);
 
@@ -705,7 +709,7 @@ protected:
 		if ( _stats.generated() >= _max_generations )
 			return false;
 		// First process nodes with w_{#g}=1
-		if (!_q1.empty()) {
+		if (_lazy_iw_1_search && !_q1.empty()) {
 			NodePT node = _q1.next();
 			process_node(node);
 			_stats.wg1_node();
@@ -786,8 +790,13 @@ protected:
 	//! Returns true iff the newly-created node is a solution
 	bool create_node(const NodePT& node) {
 		if (is_goal(node)) {
-			LPT_INFO("search", "Goal node was found");
-			_solution = _best_node = node;
+			evaluate_reward(node);
+			_stats.reward(node->R);
+			update_best_node(node);
+			if (_log_search )
+				_visited.push_back(node);
+			LPT_INFO("search", "Goal node was found, R(s) = " << node->R << ", generated=" << _stats.generated());
+			_solution = node;
 			return true;
 		}
 		node->unachieved_subgoals = _heuristic.compute_unachieved(node->state);
