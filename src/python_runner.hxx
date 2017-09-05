@@ -11,12 +11,14 @@
 #include <search/runner.hxx>
 #include <search/options.hxx>
 #include <utils/config.hxx>
+#include <utils/external.hxx>
 #include <dynamics/hybrid_plan.hxx>
 // This include will dinamically point to the adequate per-instance automatically generated file
 #include <boost/python.hpp>
 #include <lib/rapidjson/document.h>
 
 #include <map>
+#include <functional>
 
 namespace bp = boost::python;
 
@@ -42,6 +44,10 @@ public:
 
     //! The type of the concrete instance generator function
 	typedef std::function<void (const rapidjson::Document&, const std::string&)> ProblemGeneratorType;
+    //! The type of the factory method for external modules
+    typedef ExternalI* (*ExternalCreatorSignature) (const ProblemInfo& info, const std::string&);
+    //typedef std::function<ExternalI* (const ProblemInfo& info, const std::string&)> ExternalCreatorFunction;
+    typedef std::function<ExternalI* (const ProblemInfo& info, const std::string&)> ExternalCreatorFunction;
 
 
     PythonRunner();
@@ -99,6 +105,10 @@ public:
     //! simulate_plan - simulates the plan found (useful for visualization and debugging)
     bp::list    simulate_plan( double duration, double step_size );
     double      get_simulation_time() { return _simulation_time; }
+    //! load external symbols from path
+    void        set_external_lib( std::string ex) { _external_dll_name = ex; }
+    std::string get_external_lib() { return _external_dll_name; }
+    void        load_external_symbols( ProblemInfo& );
 
     //! verify_plan - verifies the plan found (useful for debugging purposes)
     bool        get_verify_plan( ) { return _verify_plan; }
@@ -143,6 +153,9 @@ private:
     EmbeddedDriver*                         _current_driver;
     std::shared_ptr<State>                  _state;
     std::shared_ptr<SimpleStateModel>       _state_model;
+    std::string                             _external_dll_name;
+    void*                                   _external_dll_handle;
+    ExternalCreatorFunction                 _external_creator;
 };
 
 }} // namespace

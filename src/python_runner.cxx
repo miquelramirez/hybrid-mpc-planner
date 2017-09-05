@@ -1,5 +1,4 @@
 #include <python_runner.hxx>
-#include <components.hxx>
 #include <problem.hxx>
 #include <utils/loader.hxx>
 #include <utils/config.hxx>
@@ -10,12 +9,38 @@
 #include <languages/fstrips/operations.hxx>
 #include <search/drivers/setups.hxx>
 #include <search/drivers/online/registry.hxx>
+#include <cstring>
+#include <lib/rapidjson/document.h>
+#include <fstrips/loader.hxx>
+#include <utils/loader.hxx>
+#include <utils/component_factory.hxx>
+
+#include <dlfcn.h> // For run-time symbol loading in Linux
 
 #include <locale>
 #include <codecvt>
+// For Modern C++ friendly loading
+#include <boost/function_types/components.hpp>
+#include <boost/function_types/function_pointer.hpp>
 
-// MRJ: Deactivated for now
-// #include <search/ompl/default_engine.hxx>
+
+fs0::Problem* generate(const rapidjson::Document& data, const std::string& data_dir) {
+	fs0::BaseComponentFactory factory;
+
+	LPT_INFO( "main", "[components::generate] Loading language info...")
+	fs0::fstrips::LanguageJsonLoader::loadLanguageInfo(data);
+
+	LPT_INFO( "main", "[components::generate] Loading problem info...")
+	fs0::Loader::loadProblemInfo(data, data_dir, factory);
+
+    //MRJ: @TODO: this needs to be loaded at run-time
+    //std::unique_ptr<External> external = std::unique_ptr<External>(new External(info, data_dir));
+    //external->registerComponents();
+    //info.set_external(std::move(external));
+
+	LPT_INFO( "main", "[components::generate] Loading problem...");
+	return fs0::Loader::loadProblem(data);
+}
 
 namespace fs0 { namespace drivers {
 
@@ -54,7 +79,8 @@ PythonRunner::PythonRunner() :
     _verify_plan( false ),
     _current_driver( nullptr ),
     _state(nullptr),
-    _state_model(nullptr) {
+    _state_model(nullptr),
+	_external_dll_handle(nullptr) {
 
 }
 
@@ -75,13 +101,16 @@ PythonRunner::PythonRunner( const PythonRunner& other ) {
     _options = other._options;
     _state = nullptr;
     _state_model = nullptr;
+	_external_dll_handle = nullptr;
 }
 
 PythonRunner::~PythonRunner() {
-
+	if ( _external_dll_handle != nullptr )
+		dlclose(_external_dll_handle);
 }
 
-void PythonRunner::report_stats(const Problem& problem, const std::string& out_dir) {
+void
+PythonRunner::report_stats(const Problem& problem, const std::string& out_dir) {
 	const ProblemInfo& info = ProblemInfo::getInstance();
 	const AtomIndex& tuple_index = problem.get_tuple_index();
 	unsigned n_actions = problem.getGroundActions().size();
@@ -112,6 +141,36 @@ void PythonRunner::report_stats(const Problem& problem, const std::string& out_d
 	json_out << "\t\"num_state_constraint_atoms\": " << num_sc_atoms;
 	json_out << std::endl << "}" << std::endl;
 	json_out.close();
+}
+
+void
+PythonRunner::load_external_symbols( ProblemInfo& info ) {
+	if (_external_dll_name.empty()) return;
+	if ( _external_dll_handle != nullptr )
+		throw std::runtime_error("[PythonRunner::load_external_symbols] : Already associated with an external dll!");
+	_external_dll_handle = dlopen( _external_dll_name.c_str(), RTLD_LAZY );
+
+	if ( _external_dll_handle == nullptr )
+		throw std::runtime_error("[PythonRunner::load_external_symbols] : Could not open external dll: " + _external_dll_name );
+	// MRJ: see discussion on https://stackoverflow.com/questions/4770968/storing-function-pointer-in-stdfunction
+
+	dlerror(); // Clear error state
+	ExternalCreatorSignature func_ptr;
+	*reinterpret_cast<void**>(&func_ptr) = dlsym(_external_dll_handle, "create_instance");
+	//func_ptr = reinterpret_cast<ExternalCreatorSignature>(dlsym(_external_dll_handle, "create_instance"));
+	_external_creator = func_ptr;
+	const char *dlsym_error = dlerror();
+	if (dlsym_error != nullptr) {
+		dlclose(_external_dll_handle);
+		throw std::runtime_error("[PythonRunner::load_external_symbols] : Cannot load symbol 'create_instance' " + std::string(dlsym_error));
+	}
+
+	// and finally we're ready
+	std::unique_ptr<ExternalI> external = std::unique_ptr<ExternalI>(_external_creator(info, _options.getDataDir()));
+	LPT_INFO("main", "Registering external components from library '"<< _external_dll_name << "'");
+	external->registerComponents();
+	info.set_external(std::move(external));
+
 }
 
 void
@@ -158,7 +217,21 @@ PythonRunner::setup() {
     const std::string problem_spec = _options.getDataDir() + "/problem.json";
     auto data = Loader::loadJSONObject( problem_spec);
     LPT_INFO("main", "[PythonRunner::setup] Loaded JSON specification from '" << problem_spec << "'... ");
-    auto problem = generate(data, _options.getDataDir());
+
+    fs0::BaseComponentFactory factory;
+
+    LPT_INFO( "main", "[PythonRunner::setup] Loading language info...")
+    fs0::fstrips::LanguageJsonLoader::loadLanguageInfo(data);
+
+    LPT_INFO( "main", "[PythonRunner::setup] Loading problem info...")
+    auto& info = fs0::Loader::loadProblemInfo(data, _options.getDataDir(), factory);
+
+	//MRJ: placement of this function matters - depends on ProblemInfo being setup
+	load_external_symbols(info);
+
+    LPT_INFO( "main", "[PythonRunner::setup] Loading problem...");
+    auto problem = fs0::Loader::loadProblem(data);
+
     LPT_INFO("main", "[PythonRunner::setup] Activated problem model... ");
     Config& config = Config::instance();
 
@@ -267,7 +340,7 @@ PythonRunner::solve() {
     float t0 = aptk::time_used();
     //Config& config = Config::instance();
     //ExitCode code = _current_driver->search(*_state_model, config, _options.getOutputDir(), 0.0f);
-    ExitCode code = _current_driver->search();
+    /*ExitCode code =*/ _current_driver->search();
     _current_driver->archive_results_JSON( "results.json" );
     _native_plan.interpret_plan( _current_driver->plan );
     export_plan();

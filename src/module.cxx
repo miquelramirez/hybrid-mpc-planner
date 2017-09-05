@@ -31,6 +31,7 @@ BOOST_PYTHON_MODULE( libfs_planner )
     .add_property( "horizon", &PythonRunner::get_horizon, &PythonRunner::set_horizon)
     .add_property( "budget", &PythonRunner::get_budget, &PythonRunner::set_budget)
     .add_property( "verify_plan", &PythonRunner::get_verify_plan, &PythonRunner::set_verify_plan)
+    .add_property( "external_lib", &PythonRunner::get_external_lib, &PythonRunner::set_external_lib)
 
     ; //! Note the semi colon!
 }

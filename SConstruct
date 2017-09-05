@@ -44,7 +44,7 @@ include_paths.append( '/usr/include/python2.7' )
 
 env.Append( CCFLAGS = '-fPIC' )
 env.Append( LIBPATH = [ '/usr/lib/python2.7/config' ] )
-env.Append( LIBS = [ '-lboost_python', '-lpython2.7' ] )
+env.Append( LIBS = [ '-lboost_python', '-lpython2.7', '-ldl' ] )
 env['STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME']=1
 
 env.Append(CPPPATH = [ os.path.abspath(p) for p in include_paths ])
