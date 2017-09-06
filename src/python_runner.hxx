@@ -5,6 +5,7 @@
 #include <fs_types.hxx>
 #include <problem.hxx>
 #include <fstrips/language_info.hxx>
+#include <constraints/registry.hxx>
 #include <models/simple_state_model.hxx>
 #include <search/drivers/base.hxx>
 #include <search/drivers/online/registry.hxx>
@@ -150,6 +151,7 @@ private:
     std::unique_ptr<fstrips::LanguageInfo>  _lang_info;
     std::unique_ptr<Problem>                _problem;
     std::unique_ptr<lapkt::tools::Logger>   _logger;
+    std::unique_ptr<LogicalComponentRegistry> _registry;
     std::map< std::string, VariableIdx >    _var_index;
     std::unique_ptr<Config>                 _instance_config;
     EmbeddedDriver*                         _current_driver;

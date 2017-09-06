@@ -51,6 +51,7 @@ public:
     SingletonLock( PythonRunner& r )
         : _runner(r) {
             lapkt::tools::Logger::set_instance( std::move(_runner._logger));
+			LogicalComponentRegistry::set_instance( std::move( _runner._registry ));
             fstrips::LanguageInfo::setInstance( std::move(_runner._lang_info ));
             ProblemInfo::setInstance( std::move(_runner._problem_info));
             Problem::setInstance( std::move(_runner._problem) );
@@ -62,6 +63,7 @@ public:
         _runner._lang_info = fstrips::LanguageInfo::claimOwnership();
         _runner._problem = Problem::claimOwnership();
         _runner._instance_config = Config::claimOwnership();
+		_runner._registry = LogicalComponentRegistry::claim_ownership();
         _runner._logger = lapkt::tools::Logger::claim_ownership();
     }
 };
@@ -227,6 +229,8 @@ PythonRunner::setup() {
     _instance_config = std::unique_ptr<Config>(new Config(_options.getDriver(), _options.getUserOptions(), _options.getDefaultConfigurationFilename()));
     Config::setAsGlobal( std::move(_instance_config) );
 
+	fs0::LogicalComponentRegistry::set_instance( std::make_unique<fs0::LogicalComponentRegistry>());
+
     LPT_INFO("main", "[PythonRunner::setup] Generating the problem (" << _options.getDataDir() << ")... ");
     //! This will generate the problem and set it as the global singleton instance
     const std::string problem_spec = _options.getDataDir() + "/problem.json";
@@ -273,6 +277,7 @@ PythonRunner::setup() {
 
     _instance_config = Config::claimOwnership();
     _logger = lapkt::tools::Logger::claim_ownership();
+	_registry = LogicalComponentRegistry::claim_ownership();
 }
 
 void
