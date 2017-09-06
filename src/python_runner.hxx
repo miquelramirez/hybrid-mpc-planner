@@ -46,8 +46,10 @@ public:
 	typedef std::function<void (const rapidjson::Document&, const std::string&)> ProblemGeneratorType;
     //! The type of the factory method for external modules
     typedef ExternalI* (*ExternalCreatorSignature) (const ProblemInfo& info, const std::string&);
+    typedef void (*ExternalDestructorSignature) (ExternalI* ex);
     //typedef std::function<ExternalI* (const ProblemInfo& info, const std::string&)> ExternalCreatorFunction;
     typedef std::function<ExternalI* (const ProblemInfo& info, const std::string&)> ExternalCreatorFunction;
+    typedef std::function<void(ExternalI*)> ExternalDestructorFunction;
 
 
     PythonRunner();
@@ -156,6 +158,7 @@ private:
     std::string                             _external_dll_name;
     void*                                   _external_dll_handle;
     ExternalCreatorFunction                 _external_creator;
+    ExternalDestructorFunction              _external_destructor;
 };
 
 }} // namespace

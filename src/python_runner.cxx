@@ -105,8 +105,14 @@ PythonRunner::PythonRunner( const PythonRunner& other ) {
 }
 
 PythonRunner::~PythonRunner() {
-	if ( _external_dll_handle != nullptr )
-		dlclose(_external_dll_handle);
+	std::cout << "[PythonRunner::Destructor] destroying external symbols" << std::endl;
+	if ( _external_dll_handle == nullptr )
+		return;
+
+	ExternalI* ex = _problem_info->release_external();
+	_external_destructor(ex);
+	dlclose(_external_dll_handle);
+	std::cout << "[PythonRunner::Destructor] all done!" << std::endl;
 }
 
 void
@@ -164,10 +170,19 @@ PythonRunner::load_external_symbols( ProblemInfo& info ) {
 		dlclose(_external_dll_handle);
 		throw std::runtime_error("[PythonRunner::load_external_symbols] : Cannot load symbol 'create_instance' " + std::string(dlsym_error));
 	}
-
+	dlerror(); // Clear error state
+	ExternalDestructorSignature des_func_ptr;
+	*reinterpret_cast<void**>(&des_func_ptr) = dlsym(_external_dll_handle, "destroy_instance");
+	//func_ptr = reinterpret_cast<ExternalCreatorSignature>(dlsym(_external_dll_handle, "create_instance"));
+	_external_destructor = des_func_ptr;
+	dlsym_error = dlerror();
+	if (dlsym_error != nullptr) {
+		dlclose(_external_dll_handle);
+		throw std::runtime_error("[PythonRunner::load_external_symbols] : Cannot load symbol 'destroy_instance' " + std::string(dlsym_error));
+	}
 	// and finally we're ready
 	std::unique_ptr<ExternalI> external = std::unique_ptr<ExternalI>(_external_creator(info, _options.getDataDir()));
-	LPT_INFO("main", "Registering external components from library '"<< _external_dll_name << "'");
+	LPT_INFO("main", "[PythonRunner::load_external_symbols] : Registering external components from library '"<< _external_dll_name << "'");
 	external->registerComponents();
 	info.set_external(std::move(external));
 
