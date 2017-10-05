@@ -411,11 +411,13 @@ public:
 		}
 
 		if ( _config._num_brfs_layers > 0 ) {
+			LPT_INFO("search", "Using the lookahead...");
 			for (const auto& a : _model.applicable_actions(s, _config._enforce_state_constraints)) {
 				StateT s_a = _model.next( s, a );
 				_stats.generation();
 
 	        	run(s_a, _config._max_width, top_level, a);
+				LPT_INFO("search", "Finished run: max R(s)=" << _best_node->R << " visited: " << _visited.size() );
 				std::vector<NodePT> _(_optimal_paths.size(), nullptr);
 				_optimal_paths.swap(_);
 				_evaluator.reset();

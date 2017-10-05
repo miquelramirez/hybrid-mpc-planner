@@ -580,7 +580,7 @@ PythonRunner::simulate_plan( double duration, double step_size ) {
     float t0 = aptk::time_used();
 
 
-    double sim_duration = std::min( duration, (double)_native_plan.get_duration() );
+    double sim_duration = duration;//std::min( duration, (double)_native_plan.get_duration() );
     LPT_INFO( "main", "Simulating plan for " << sim_duration << " time units");
     LPT_INFO( "main", "Simulating with dt = " << step_size << " time units");
 

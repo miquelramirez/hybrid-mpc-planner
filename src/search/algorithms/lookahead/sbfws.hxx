@@ -45,6 +45,9 @@ struct novelty_comparer {
 		if (n1->unachieved_subgoals < n2->unachieved_subgoals) return false;
 		if (n1->g > n2->g) return true;
 		if (n1->g < n2->g) return false;
+		// MRJ: reverse according to R
+		if (n1->R < n2->R) return true;
+		if (n1->R > n2->R) return false;
 		return n1->_gen_order > n2->_gen_order;
 	}
 };
@@ -558,7 +561,9 @@ protected:
     // MRJ: Reward Function
 	RewardPT	_reward_function;
 
-
+	// Horizon
+	float 		_horizon;
+	VariableIdx	_clock_var;
 
 public:
 
@@ -582,8 +587,10 @@ public:
 		_generated(1),
 		_min_subgoals_to_reach(std::numeric_limits<unsigned>::max()),
 		_novelty_levels(setup_novelty_levels(model, config)),
-        _reward_function(nullptr)
+        _reward_function(nullptr),
+		_horizon( config.getHorizonTime() )
 	{
+		_clock_var = ProblemInfo::getInstance().getVariableId("clock_time()");
 	}
 
 	~SBFWS() = default;
@@ -641,6 +648,8 @@ public:
 			return;
 		}
 		n->R = _reward_function->evaluate(n->state);
+		if ( n->parent != nullptr )
+			n->R += n->parent->R;
 		return;
 	}
 
@@ -784,21 +793,37 @@ protected:
 		}
 	}
 
+	bool is_terminal(const NodePT& node) {
+		return fs0::value<float>(node->state.getValue(_clock_var)) >= Config::instance().getHorizonTime();
+	}
+
 
 	//! When opening a node, we compute #g and evaluates whether the given node has <#g>-novelty 1 or not;
 	//! if that is the case, we insert it into a special queue.
 	//! Returns true iff the newly-created node is a solution
 	bool create_node(const NodePT& node) {
-		if (is_goal(node)) {
+		if (is_goal(node) ) {
 			evaluate_reward(node);
 			_stats.reward(node->R);
 			update_best_node(node);
 			if (_log_search )
 				_visited.push_back(node);
-			LPT_INFO("search", "Goal node was found, R(s) = " << node->R << ", generated=" << _stats.generated());
+			LPT_INFO("search", "Goal node was found, R(s) = " << node->R << ", generated=" << _stats.generated() << ", best R=" << _best_node->R );
 			_solution = node;
 			return true;
 		}
+		if (is_terminal(node)) {
+			evaluate_reward(node);
+			_stats.reward(node->R);
+			update_best_node(node);
+			if (_log_search )
+				_visited.push_back(node);
+			LPT_INFO("search", "Terminal node was found, R(s) = " << node->R << ", generated=" << _stats.generated() << ", best R=" << _best_node->R );
+			return false;
+		}
+		evaluate_reward(node);
+        _stats.reward(node->R);
+
 		node->unachieved_subgoals = _heuristic.compute_unachieved(node->state);
 
 		if (node->unachieved_subgoals < _min_subgoals_to_reach) {
@@ -823,9 +848,8 @@ protected:
 		_stats.generation();
 		if (node->decreases_unachieved_subgoals()) _stats.generation_g_decrease();
 
-        evaluate_reward(node);
-        _stats.reward(node->R);
-        update_best_node(node);
+
+
 		if (_log_search )
 			_visited.push_back(node);
 		return false;
