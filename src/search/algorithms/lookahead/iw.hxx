@@ -358,6 +358,8 @@ public:
 			return;
 		}
 		n->R = _reward_function->evaluate(n->state);
+		if ( n->parent != nullptr )
+			n->R += n->parent->R; // accumulate
 		return;
 	}
 
