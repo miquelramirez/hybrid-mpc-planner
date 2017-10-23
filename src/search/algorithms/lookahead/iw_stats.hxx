@@ -32,12 +32,17 @@ namespace fs0 { namespace lookahead {
 
 
     	void set_initial_reward(float r) { _initial_reward = r; }
-    	void reward(float r) {
-    		_max_reward = std::max(r, _max_reward);
+    	void update_best_reward(float r) {
+    		_max_reward = r;//std::max(r, _max_reward);
     	}
+
+        void update_depth_best_reward(unsigned g) {
+            _max_depth = g;
+        }
 
         float initial_reward() const { return _initial_reward; }
         float max_reward() const { return _max_reward; }
+        unsigned depth_max_reward() const { return _max_depth; }
 
         void reset() {
             _expanded = 0;
@@ -51,6 +56,7 @@ namespace fs0 { namespace lookahead {
 
             _initial_reward = 0.0f;
             _max_reward = -std::numeric_limits<float>::max();
+            _max_depth = 0;
         }
 
         using DataPointT = std::tuple<std::string, std::string, std::string>;
@@ -72,6 +78,7 @@ namespace fs0 { namespace lookahead {
 
         float   _initial_reward = 0.0f;
         float   _max_reward = -std::numeric_limits<float>::max();
+        unsigned _max_depth = 0;
     };
 
 

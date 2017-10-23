@@ -33,6 +33,7 @@ namespace fs0 { namespace lookahead {
     		std::make_tuple("_num_generated_g_decrease", "Generations with #g decrease", std::to_string(_num_generated_g_decrease)),
             std::make_tuple("_initial_reward", "r(s0)", std::to_string(_initial_reward)),
             std::make_tuple("_max_reward", "max r(s)", std::to_string(_max_reward)),
+            std::make_tuple("_max_depth", "max g(s)", std::to_string(_max_depth))
     	};
     	return data;
     }

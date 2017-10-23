@@ -146,6 +146,7 @@ IteratedWidthDriver::archive_scalar_stats( rapidjson::Document& doc ) {
 	doc.AddMember( "num_wgt2_nodes", Value(_stats.num_wgt2_nodes()).Move(), allocator );
 	doc.AddMember( "initial_reward", Value(_stats.initial_reward()).Move(), allocator );
 	doc.AddMember( "max_reward", Value(_stats.max_reward()).Move(), allocator );
+	doc.AddMember( "max_depth", Value(_stats.depth_max_reward()).Move(), allocator);
 }
 
 

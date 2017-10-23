@@ -232,6 +232,9 @@ public:
 		//! Pivot on rewards
 		bool	 _pivot_on_rewards;
 
+		//! discount factor
+		float 	_discount_factor;
+
 		Config(bool complete, unsigned max_width, const fs0::Config& global_config) :
 			_complete(complete),
 			_max_width(max_width),
@@ -242,8 +245,10 @@ public:
 			_R_file(global_config.getOption<std::string>("lookahead.iw.from_file", "")),
 			_log_search(global_config.getOption<bool>("lookahead.iw.log", false)),
 			_num_brfs_layers(global_config.getOption<int>("lookahead.iw.layers", 0)),
-			_pivot_on_rewards(global_config.getOption<bool>("lookahead.iw.pivot_on_rewards", false))
+			_pivot_on_rewards(global_config.getOption<bool>("lookahead.iw.pivot_on_rewards", false)),
+			_discount_factor(global_config.getOption<float>("lookahead.iw.discount_factor", 1.0))
 		{
+			std::cout << _discount_factor << std::endl;
 		}
 	};
 	//! The search model
@@ -357,7 +362,7 @@ public:
 			n->R = 0.0f;
 			return;
 		}
-		n->R = _reward_function->evaluate(n->state);
+		n->R = std::pow(_config._discount_factor,n->g)*_reward_function->evaluate(n->state);
 		if ( n->parent != nullptr )
 			n->R += n->parent->R; // accumulate
 		return;
@@ -475,7 +480,7 @@ public:
 			evaluate_reward(root);
 			_stats.set_initial_reward(root->R);
 	        _best_node = root;
-			_stats.reward(_best_node->R);
+			_stats.update_best_reward(_best_node->R);
 		} else {
 			evaluate_reward(root);
 			if ( _best_node == nullptr ) {
@@ -597,9 +602,12 @@ protected:
 	}
 
     void update_best_node( const NodePT& node ) {
-		_stats.reward(node->R);
-        if ( node->R > _best_node->R )
+
+        if ( _best_node->g < node->g || node->R > _best_node->R ) {
+			_stats.update_best_reward(node->R);
+			_stats.update_depth_best_reward(node->g);
             _best_node = node;
+		}
     }
 
 	void mark_seed_subgoals(const NodePT& node) {
