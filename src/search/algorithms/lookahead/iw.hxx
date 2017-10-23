@@ -248,7 +248,6 @@ public:
 			_pivot_on_rewards(global_config.getOption<bool>("lookahead.iw.pivot_on_rewards", false)),
 			_discount_factor(global_config.getOption<float>("lookahead.iw.discount_factor", 1.0))
 		{
-			std::cout << _discount_factor << std::endl;
 		}
 	};
 	//! The search model
