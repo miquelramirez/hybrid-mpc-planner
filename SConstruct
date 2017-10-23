@@ -9,7 +9,7 @@ HOME = os.path.expanduser("~")
 vars = Variables(['variables.cache', 'custom.py'], ARGUMENTS)
 vars.Add(BoolVariable('debug', 'Whether this is a debug build', 'no'))
 vars.Add(BoolVariable('edebug', 'Extreme debug', 'no'))
-vars.Add(PathVariable('lapkt', 'Path where the LAPKT library is installed', os.getenv('LAPKT_PATH', ''), PathVariable.PathIsDir))
+vars.Add(PathVariable('lapkt', 'Path where the LAPKT library is installed', os.getenv('FS_LAPKT_PATH', ''), PathVariable.PathIsDir))
 vars.Add(PathVariable('fs0', 'Path where the FS+ library is installed', os.getenv('FS_PLUS_PATH', ''), PathVariable.PathIsDir))
 
 def which(program):
