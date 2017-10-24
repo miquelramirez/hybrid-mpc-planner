@@ -43,11 +43,12 @@ struct novelty_comparer {
 		if (n1->w_g_r < n2->w_g_r) return false;
 		if (n1->unachieved_subgoals > n2->unachieved_subgoals) return true;
 		if (n1->unachieved_subgoals < n2->unachieved_subgoals) return false;
-		if (n1->g > n2->g) return true;
-		if (n1->g < n2->g) return false;
 		// MRJ: reverse according to R
 		if (n1->R < n2->R) return true;
 		if (n1->R > n2->R) return false;
+		if (n1->g > n2->g) return true;
+		if (n1->g < n2->g) return false;
+
 		return n1->_gen_order > n2->_gen_order;
 	}
 };
@@ -564,6 +565,7 @@ protected:
 	// Horizon
 	float 		_horizon;
 	VariableIdx	_clock_var;
+	float		_discount;
 
 public:
 
@@ -588,7 +590,8 @@ public:
 		_min_subgoals_to_reach(std::numeric_limits<unsigned>::max()),
 		_novelty_levels(setup_novelty_levels(model, config)),
         _reward_function(nullptr),
-		_horizon( config.getHorizonTime() )
+		_horizon( config.getHorizonTime() ),
+		_discount(config.getOption<float>("lookahead.bfws.discount", 1.0))
 	{
 		_clock_var = ProblemInfo::getInstance().getVariableId("clock_time()");
 	}
@@ -647,7 +650,7 @@ public:
 			n->R = 0.0f;
 			return;
 		}
-		n->R = _reward_function->evaluate(n->state);
+		n->R = std::pow(_discount,n->g)*_reward_function->evaluate(n->state);
 		if ( n->parent != nullptr )
 			n->R += n->parent->R;
 		return;
@@ -703,13 +706,14 @@ public:
 protected:
 
     void update_best_node( const NodePT& node ) {
-		_stats.reward(node->R);
 		if ( _best_node == nullptr ) {
 			_best_node = node;
 			return;
 		}
-        if ( node->R > _best_node->R )
+        if ( _best_node->g < node->g || node->R > _best_node->R ) {
+			_stats.reward(node->R);
             _best_node = node;
+		}
     }
 	//! Process one node from some of the queues, according to their priorities
 	//! Returns true if some action has been performed, false if all queues were empty
@@ -804,7 +808,6 @@ protected:
 	bool create_node(const NodePT& node) {
 		if (is_goal(node) ) {
 			evaluate_reward(node);
-			_stats.reward(node->R);
 			update_best_node(node);
 			if (_log_search )
 				_visited.push_back(node);
@@ -814,7 +817,6 @@ protected:
 		}
 		if (is_terminal(node)) {
 			evaluate_reward(node);
-			_stats.reward(node->R);
 			update_best_node(node);
 			if (_log_search )
 				_visited.push_back(node);
@@ -822,7 +824,7 @@ protected:
 			return false;
 		}
 		evaluate_reward(node);
-        _stats.reward(node->R);
+		update_best_node(node);
 
 		node->unachieved_subgoals = _heuristic.compute_unachieved(node->state);
 
