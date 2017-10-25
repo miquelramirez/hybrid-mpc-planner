@@ -660,6 +660,7 @@ public:
 	bool solve_model(PlanT& solution) { return search(_model.init(), solution); }
 
 	bool search(const StateT& s, PlanT& plan) {
+		_min_subgoals_to_reach =std::numeric_limits<unsigned>::max();
 		_solution = nullptr;
 		_best_node = nullptr;
 		while ( !_q1.empty() )
@@ -674,6 +675,7 @@ public:
 		_generated = 0;
 		_visited.clear();
 		_heuristic.reset();
+		_stats.reset_generations();
 
 		NodePT root = std::make_shared<NodeT>(s, ++_generated);
 		create_node(root);
@@ -684,17 +686,13 @@ public:
 		_stats.set_initial_reward(root->R);
 		assert(_q1.size()==1); // The root node must necessarily have novelty 1
 
-		// Force one simulation from the root node and abort the search
-//  		_heuristic.compute_R(*root);
-// 		return false;
-
-
 		// The main search loop
 		for (bool remaining_nodes = true; !_solution && remaining_nodes;) {
 			remaining_nodes = process_one_node();
 		}
 		// Dump optimal_paths and visited into JSON document
 		LPT_INFO("search", "Call to BFWS finished, generated=" << _stats.generated());
+		LPT_INFO("search", "Best R(s): " << _best_node->R << " depth: " << _best_node->g );
 		if (_log_search)
 			dump_search_tree( *this, "bfws.lookahead.json");
 		if ( _solution == nullptr )
