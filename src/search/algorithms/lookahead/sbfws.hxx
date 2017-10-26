@@ -865,7 +865,7 @@ protected:
 
 	// Return true iff at least one node was created
 	void expand_node(const NodePT& node) {
-		LPT_DEBUG("cout", *node);
+		LPT_INFO("search", *node);
 		_stats.expansion();
 		if (node->decreases_unachieved_subgoals()) _stats.expansion_g_decrease();
 

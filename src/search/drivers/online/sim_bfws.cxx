@@ -143,7 +143,10 @@ SimBFWSDriver::archive_scalar_stats( rapidjson::Document& doc ) {
     doc.AddMember( "num_wgr2_nodes", Value(_stats.num_wgr2_nodes()).Move(), allocator );
 	doc.AddMember( "num_wgr_wgt2_nodes", Value(_stats.num_wgr_gt2_nodes()).Move(), allocator );
 	doc.AddMember( "initial_reward", Value(_stats.initial_reward()).Move(), allocator );
-	doc.AddMember( "max_reward", Value(_stats.max_reward()).Move(), allocator );
+	float selected_reward = _engine->get_best_node() ? _engine->get_best_node()->R : -100000.0;
+	doc.AddMember( "max_reward", Value(selected_reward).Move(), allocator );
+	unsigned depth_reward = _engine->get_best_node() ? _engine->get_best_node()->g : 0;
+	doc.AddMember( "depth_reward", Value(depth_reward).Move(), allocator );
 }
 
 
