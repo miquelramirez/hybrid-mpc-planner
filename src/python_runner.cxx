@@ -352,6 +352,18 @@ PythonRunner::get_initial_state() {
 }
 
 void
+PythonRunner::set_null_plan() {
+	_problem->setInitialState( *_state );
+	SingletonLock lock(*this);
+	float t0 = aptk::time_used();
+	_current_driver->search();
+	std::vector<const fs0::GroundAction*> empty;
+	_native_plan.interpret_plan( empty );
+	_plan = bp::list();
+	_search_time = aptk::time_used() - t0;
+}
+
+void
 PythonRunner::solve() {
     // MRJ: Note that we need to set the initial state before "locking in"
     // the singletons

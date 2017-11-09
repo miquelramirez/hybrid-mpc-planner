@@ -62,6 +62,7 @@ public:
     void        set_initial_state( bp::dict& state );
     bp::dict    get_initial_state();
     void        solve();
+    void        set_null_plan();
 
     //! Properties
 
