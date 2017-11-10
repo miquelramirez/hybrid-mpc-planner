@@ -44,10 +44,12 @@ struct novelty_comparer {
 		if (n1->unachieved_subgoals > n2->unachieved_subgoals) return true;
 		if (n1->unachieved_subgoals < n2->unachieved_subgoals) return false;
 		// MRJ: reverse according to R
+		if (n1->T < n2->T) return true;
+		if (n1->T > n2->T) return false;
 		if (n1->R < n2->R) return true;
 		if (n1->R > n2->R) return false;
-		if (n1->g > n2->g) return true;
-		if (n1->g < n2->g) return false;
+		//if (n1->g > n2->g) return true;
+		//if (n1->g < n2->g) return false;
 
 		return n1->_gen_order > n2->_gen_order;
 	}
@@ -103,6 +105,7 @@ public:
 
     //! Reward
     float R;
+	float T;
 
 	//! The indexes of the variables whose atoms form the set 1(s), which contains all atoms in 1(parent(s)) not deleted by the action that led to s, plus those
 	//! atoms in s with novelty 1.
@@ -122,7 +125,8 @@ public:
 		_helper(nullptr),
 		_relevant_atoms(nullptr),
 		_hash_r(0),
-        R(0.0f)
+        R(0.0f),
+		T(0.0f)
 // 		_nov1atom_idxs()
 	{
 		assert(_gen_order > 0); // Very silly way to detect overflow, in case we ever generate > 4 billion nodes :-)
@@ -158,6 +162,7 @@ public:
 		os << ", parent = " << (parent ? "#" + std::to_string(parent->_gen_order) : "None");
 		os << ", decr(#g)= " << this->decreases_unachieved_subgoals();
         os << ", R(s)= " << this->R;
+		os << ", T(s)= " << this->T;
 // 		if (action != ActionT::invalid_action_id) os << ", a = " << *problem.getGroundActions()[action];
 		if (action != ActionT::invalid_action_id) os << ", a = " << action;
 		else os << ", a = None";
@@ -644,6 +649,7 @@ public:
 		return _reward_function;
 	}
 
+
 	//! Evaluate reward
 	void evaluate_reward( NodePT n ) const {
 		if ( _reward_function == nullptr ) {
@@ -654,6 +660,14 @@ public:
 		if ( n->parent != nullptr )
 			n->R += n->parent->R;
 		return;
+	}
+
+	void evaluate_terminal_cost( NodePT n ) const {
+		if (_reward_function == nullptr) {
+			n->T = 0.0f;
+			return;
+		}
+		n->T = _reward_function->terminal(n->state);
 	}
 
 	//! Convenience method
@@ -692,7 +706,8 @@ public:
 		}
 		// Dump optimal_paths and visited into JSON document
 		LPT_INFO("search", "Call to BFWS finished, generated=" << _stats.generated());
-		LPT_INFO("search", "Best R(s): " << _best_node->R << " depth: " << _best_node->g );
+		LPT_INFO("search", "Best R(s): " << _best_node->R << " Best T(s): " << _best_node->T << " depth: " << _best_node->g );
+		LPT_INFO("search", "Best: " << *_best_node );
 		if (_log_search)
 			dump_search_tree( *this, "bfws.lookahead.json");
 		if ( _solution == nullptr )
@@ -708,8 +723,8 @@ protected:
 			_best_node = node;
 			return;
 		}
-        if ( _best_node->g < node->g || node->R > _best_node->R ) {
-			_stats.reward(node->R);
+        if ( _best_node->g < node->g || (node->T + node->R) > (node->T + _best_node->R) ) {
+			_stats.reward(node->R+node->T);
             _best_node = node;
 		}
     }
@@ -815,6 +830,7 @@ protected:
 		}
 		if (is_terminal(node)) {
 			evaluate_reward(node);
+			evaluate_terminal_cost(node);
 			update_best_node(node);
 			if (_log_search )
 				_visited.push_back(node);
@@ -822,6 +838,7 @@ protected:
 			return false;
 		}
 		evaluate_reward(node);
+		evaluate_terminal_cost(node);
 		update_best_node(node);
 
 		node->unachieved_subgoals = _heuristic.compute_unachieved(node->state);
@@ -865,7 +882,7 @@ protected:
 
 	// Return true iff at least one node was created
 	void expand_node(const NodePT& node) {
-		LPT_INFO("search", *node);
+		//LPT_INFO("search", *node);
 		_stats.expansion();
 		if (node->decreases_unachieved_subgoals()) _stats.expansion_g_decrease();
 
