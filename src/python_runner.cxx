@@ -261,6 +261,7 @@ PythonRunner::setup() {
     LPT_INFO("main", "[PythonRunner::setup] Grounding Actions....");
     _problem = Problem::claimOwnership();
     _state_model = std::make_shared<SimpleStateModel>(drivers::GroundingSetup::fully_ground_simple_model(*_problem));
+	Problem::setInstance(std::move(_problem));
     LPT_INFO("main", "[PythonRunner::setup] Indexing state variables..." );
     index_state_variables();
     std::string option_value = Config::instance().getOption<bool>("dynamics.decompose_ode", false) ? "yes" : "no";
@@ -274,7 +275,7 @@ PythonRunner::setup() {
     // the pointers are initialised during this method
     _lang_info = fstrips::LanguageInfo::claimOwnership();
     _problem_info = ProblemInfo::claimOwnership();
-
+	_problem = Problem::claimOwnership();
     _instance_config = Config::claimOwnership();
     _logger = lapkt::tools::Logger::claim_ownership();
 	_registry = LogicalComponentRegistry::claim_ownership();
