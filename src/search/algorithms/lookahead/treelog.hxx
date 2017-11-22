@@ -1,7 +1,7 @@
 #pragma once
 
-#include <problem_info.hxx>
-#include <utils/archive/json.hxx>
+#include <fs/core/problem_info.hxx>
+#include <fs/core/utils/archive/json.hxx>
 
 namespace fs0 { namespace lookahead {
 

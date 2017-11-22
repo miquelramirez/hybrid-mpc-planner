@@ -2,21 +2,21 @@
 
 #include <memory>
 
-#include <fs_types.hxx>
-#include <problem.hxx>
-#include <fstrips/language_info.hxx>
-#include <constraints/registry.hxx>
-#include <models/simple_state_model.hxx>
-#include <search/drivers/base.hxx>
+#include <fs/core/fs_types.hxx>
+#include <fs/core/problem.hxx>
+#include <fs/core/fstrips/language_info.hxx>
+#include <fs/core/constraints/registry.hxx>
+#include <fs/core/models/simple_state_model.hxx>
+#include <fs/core/search/drivers/base.hxx>
 #include <search/drivers/online/registry.hxx>
-#include <search/runner.hxx>
-#include <search/options.hxx>
-#include <utils/config.hxx>
-#include <utils/external.hxx>
-#include <dynamics/hybrid_plan.hxx>
+#include <fs/core/search/runner.hxx>
+#include <fs/core/search/options.hxx>
+#include <fs/core/utils/config.hxx>
+#include <fs/core/utils/external.hxx>
+#include <fs/hybrid/dynamics/hybrid_plan.hxx>
 // This include will dinamically point to the adequate per-instance automatically generated file
 #include <boost/python.hpp>
-#include <lib/rapidjson/document.h>
+#include <rapidjson/document.h>
 
 #include <map>
 #include <functional>

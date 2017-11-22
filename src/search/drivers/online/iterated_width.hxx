@@ -2,10 +2,10 @@
 #pragma once
 
 #include <search/algorithms/lookahead/iw.hxx>
-#include <search/drivers/base.hxx>
+#include <fs/core/search/drivers/base.hxx>
 
-#include <models/simple_state_model.hxx>
-#include <search/drivers/sbfws/features/features.hxx>
+#include <fs/core/models/simple_state_model.hxx>
+#include <fs/core/search/drivers/sbfws/features/features.hxx>
 
 namespace fs0 { class Config; }
 

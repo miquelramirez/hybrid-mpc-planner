@@ -1,18 +1,19 @@
 
 #pragma once
 
-#include <search/drivers/sbfws/iw_run.hxx>
-#include <search/drivers/registry.hxx>
-#include <search/drivers/setups.hxx>
-#include <search/drivers/sbfws/base.hxx>
-#include <heuristics/unsat_goal_atoms.hxx>
-#include <heuristics/l0.hxx>
-#include <heuristics/l2_norm.hxx>
+#include <fs/core/search/drivers/sbfws/iw_run.hxx>
+#include <fs/core/search/drivers/sbfws/iw_run_config.hxx>
+#include <fs/core/search/drivers/registry.hxx>
+#include <fs/core/search/drivers/setups.hxx>
+#include <fs/core/search/drivers/sbfws/base.hxx>
+#include <fs/core/heuristics/unsat_goal_atoms.hxx>
+#include <fs/core/heuristics/l0.hxx>
+#include <fs/hybrid/heuristics/l2_norm.hxx>
 #include <lapkt/search/components/open_lists.hxx>
 #include <lapkt/search/components/stl_unordered_map_closed_list.hxx>
 
-#include <search/drivers/sbfws/stats.hxx>
-#include <heuristics/reward.hxx>
+#include <fs/core/search/drivers/sbfws/stats.hxx>
+#include <fs/core/heuristics/reward.hxx>
 #include <search/algorithms/lookahead/treelog.hxx>
 
 namespace fs0 { namespace lookahead {
@@ -188,7 +189,7 @@ public:
 	using ActionT = typename StateModelT::ActionType;
 	using IWNodeT =  SimNodeT<State, ActionT>;
 	using SimulationT =  SimulatorT<IWNodeT, StateModelT, NoveltyEvaluatorT, FeatureSetT>;
-	using SimConfigT = typename SimulationT::Config;
+	using SimConfigT = fs0::bfws::IWRunConfig;
 	using IWNodePT = typename SimulationT::NodePT;
 
 	// Novelty evaluator pointer type
@@ -723,7 +724,7 @@ protected:
 			_best_node = node;
 			return;
 		}
-        if ( _best_node->g < node->g || (node->T + node->R) > (node->T + _best_node->R) ) {
+        if ( /*_best_node->g < node->g ||*/ (node->T + node->R) > (node->T + _best_node->R) ) {
 			_stats.reward(node->R+node->T);
             _best_node = node;
 		}
@@ -824,7 +825,7 @@ protected:
 			update_best_node(node);
 			if (_log_search )
 				_visited.push_back(node);
-			LPT_INFO("search", "Goal node was found, R(s) = " << node->R << ", generated=" << _stats.generated() << ", best R=" << _best_node->R );
+			LPT_INFO("search", "Goal node was found, R(s) = " << node->R << ", T(s) = " << node->T << " generated=" << _stats.generated() << ", best R=" << _best_node->R << ", best T=" << _best_node->T);
 			_solution = node;
 			return true;
 		}
@@ -834,12 +835,12 @@ protected:
 			update_best_node(node);
 			if (_log_search )
 				_visited.push_back(node);
-			LPT_INFO("search", "Terminal node was found, R(s) = " << node->R << ", generated=" << _stats.generated() << ", best R=" << _best_node->R );
+			LPT_INFO("search", "Terminal node was found, R(s) = " << node->R << ", T(s) = " << node->T << " generated=" << _stats.generated() << ", best R=" << _best_node->R << ", best T=" << _best_node->T);
 			return false;
 		}
-		evaluate_reward(node);
-		evaluate_terminal_cost(node);
-		update_best_node(node);
+		//evaluate_reward(node);
+		//evaluate_terminal_cost(node);
+		//update_best_node(node);
 
 		node->unachieved_subgoals = _heuristic.compute_unachieved(node->state);
 

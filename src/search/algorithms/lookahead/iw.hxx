@@ -6,20 +6,20 @@
 
 
 
-#include <problem.hxx>
-#include <problem_info.hxx>
-#include <search/drivers/sbfws/base.hxx>
+#include <fs/core/problem.hxx>
+#include <fs/core/problem_info.hxx>
+#include <fs/core/search/drivers/sbfws/base.hxx>
 #include <search/algorithms/lookahead/iw_stats.hxx>
-#include <utils/printers/vector.hxx>
-#include <utils/printers/actions.hxx>
+#include <fs/core/utils/printers/vector.hxx>
+#include <fs/core/utils/printers/actions.hxx>
 #include <lapkt/search/components/open_lists.hxx>
-#include <utils/config.hxx>
+#include <fs/core/utils/config.hxx>
 #include <lapkt/novelty/tuples.hxx>
 #include <lapkt/novelty/features.hxx>
 #include <lapkt/tools/resources_control.hxx>
 #include <lapkt/tools/logging.hxx>
-#include <heuristics/novelty/features.hxx>
-#include <heuristics/reward.hxx>
+#include <fs/core/heuristics/novelty/features.hxx>
+#include <fs/core/heuristics/reward.hxx>
 
 // For logging search trees
 #include <search/algorithms/lookahead/treelog.hxx>

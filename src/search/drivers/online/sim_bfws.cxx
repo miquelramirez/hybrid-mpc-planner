@@ -2,17 +2,17 @@
 
 #include <search/drivers/online/sim_bfws.hxx>
 #include <lapkt/novelty/features.hxx>
-#include <problem_info.hxx>
-#include <search/drivers/setups.hxx>
-#include <search/utils.hxx>
+#include <fs/core/problem_info.hxx>
+#include <fs/core/search/drivers/setups.hxx>
+#include <fs/core/search/utils.hxx>
 
-#include <heuristics/goal_count_signal.hxx>
-#include <heuristics/error_signal.hxx>
-#include <heuristics/metric_signal.hxx>
+#include <fs/core/heuristics/goal_count_signal.hxx>
+#include <fs/core/heuristics/error_signal.hxx>
+#include <fs/core/heuristics/metric_signal.hxx>
 
-#include <search/novelty/fs_novelty.hxx>
+#include <fs/core/search/novelty/fs_novelty.hxx>
 
-#include <utils/config.hxx>
+#include <fs/core/utils/config.hxx>
 
 
 namespace fs0 { namespace drivers { namespace online {
@@ -127,8 +127,9 @@ SimBFWSDriver::search(const SimpleStateModel& model, const Config& config, const
 ExitCode
 SimBFWSDriver::do_search1(const SimpleStateModel& model, const Config& config, const std::string& out_dir, float start_time) {
 	create(config,  model, _stats);
+	Utils::SearchExecution<SimpleStateModel> exec_manager(model);
 
-	return drivers::Utils::do_search(*_engine, model, out_dir, start_time, _stats);
+	return exec_manager.do_search(*_engine, out_dir, start_time, _stats);
 }
 
 void

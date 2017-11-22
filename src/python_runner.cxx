@@ -1,19 +1,19 @@
 #include <python_runner.hxx>
-#include <problem.hxx>
-#include <utils/loader.hxx>
-#include <utils/config.hxx>
+#include <fs/core/problem.hxx>
+#include <fs/core/utils/loader.hxx>
+#include <fs/core/utils/config.hxx>
 #include <lapkt/tools/logging.hxx>
 #include <lapkt/tools/resources_control.hxx>
-#include <utils/printers/printers.hxx>
-#include <languages/fstrips/language.hxx>
-#include <languages/fstrips/operations.hxx>
-#include <search/drivers/setups.hxx>
+#include <fs/core/utils/printers/printers.hxx>
+#include <fs/core/languages/fstrips/language.hxx>
+#include <fs/core/languages/fstrips/operations.hxx>
+#include <fs/core/search/drivers/setups.hxx>
 #include <search/drivers/online/registry.hxx>
 #include <cstring>
-#include <lib/rapidjson/document.h>
-#include <fstrips/loader.hxx>
-#include <utils/loader.hxx>
-#include <utils/component_factory.hxx>
+#include <rapidjson/document.h>
+#include <fs/core/fstrips/loader.hxx>
+#include <fs/core/utils/loader.hxx>
+#include <fs/core/utils/component_factory.hxx>
 
 #include <dlfcn.h> // For run-time symbol loading in Linux
 

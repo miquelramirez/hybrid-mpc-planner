@@ -2,7 +2,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <search/drivers/base.hxx>
+#include <fs/core/search/drivers/base.hxx>
 #include <memory>
 
 namespace fs0 {

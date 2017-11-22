@@ -1,15 +1,14 @@
 
-#include <problem.hxx>
+#include <fs/core/problem.hxx>
+#include <fs/core/search/drivers/breadth_first_search.hxx>
+#include <fs/core/search/drivers/sbfws/sbfws.hxx>
+#include <fs/core/actions/grounding.hxx>
+#include <fs/core/problem_info.hxx>
+#include <fs/core/models/simple_state_model.hxx>
+
 #include <search/drivers/online/registry.hxx>
 #include <search/drivers/online/iterated_width.hxx>
 #include <search/drivers/online/sim_bfws.hxx>
-#include <search/drivers/breadth_first_search.hxx>
-#include <search/drivers/sbfws/sbfws.hxx>
-#include <actions/grounding.hxx>
-#include <problem_info.hxx>
-#include <models/simple_state_model.hxx>
-
-
 // using namespace fs0::gecode;
 
 namespace fs0 { namespace drivers { namespace online {
