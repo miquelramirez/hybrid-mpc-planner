@@ -522,6 +522,7 @@ protected:
 	NodePT _solution;
 	//! Best node found
 	NodePT _best_node;
+	NodePT _non_terminal_best_node;
 
 	//! A list with all nodes that have novelty w_{#g}=1
 	UnachievedOpenList _q1;
@@ -584,7 +585,8 @@ public:
 
 		_model(model),
 		_solution(nullptr),
-        	_best_node(nullptr),
+        _best_node(nullptr),
+		_non_terminal_best_node(nullptr),
 		_featureset(std::move(featureset)),
 		_heuristic(conf, config, model, _featureset, stats),
 		_stats(stats),
@@ -678,6 +680,7 @@ public:
 		_min_subgoals_to_reach =std::numeric_limits<unsigned>::max();
 		_solution = nullptr;
 		_best_node = nullptr;
+		_non_terminal_best_node = nullptr;
 		while ( !_q1.empty() )
 			_q1.next();
 		while ( !_qwgr1.empty() )
@@ -695,6 +698,8 @@ public:
 		NodePT root = std::make_shared<NodeT>(s, ++_generated);
 		create_node(root);
 		LPT_INFO("search", "Search root node: " << *root);
+		LPT_INFO("search", "R(root)=" << _reward_function->evaluate(root->state));
+		LPT_INFO("search", "T(root)=" << _reward_function->terminal(root->state));
 		LPT_INFO("search", "Pruning s s.t. w(s) > 2?" << _pruning );
 		LPT_INFO("search", "Max Generations:" << _max_generations );
 
@@ -707,6 +712,13 @@ public:
 		}
 		// Dump optimal_paths and visited into JSON document
 		LPT_INFO("search", "Call to BFWS finished, generated=" << _stats.generated());
+		if ( _best_node == nullptr && _non_terminal_best_node == nullptr ) {
+			throw std::runtime_error("SBFWS::search() : No best node was selected!");
+		}
+		if ( _best_node == nullptr && _non_terminal_best_node != nullptr ) {
+			LPT_INFO("search", "Terminal nodes weren't reached or were poor quality, returning best non terminal!");
+			_best_node = _non_terminal_best_node;
+		}
 		LPT_INFO("search", "Best R(s): " << _best_node->R << " Best T(s): " << _best_node->T << " depth: " << _best_node->g );
 		LPT_INFO("search", "Best: " << *_best_node );
 		if (_log_search)
@@ -719,14 +731,22 @@ public:
 
 protected:
 
-    void update_best_node( const NodePT& node ) {
-		if ( _best_node == nullptr ) {
-			_best_node = node;
+    void update_best_node( const NodePT& node, NodePT& best, bool non_terminal ) {
+		if ( best == nullptr ) {
+			best = node;
 			return;
 		}
-        if ( /*_best_node->g < node->g ||*/ (node->T + node->R) > (node->T + _best_node->R) ) {
+		if (non_terminal) {
+			if ( best->g < node->g || (node->T + node->R) > (best->T + best->R) ) {
+				_stats.reward(node->R+node->T);
+				best = node;
+			}
+			return;
+		}
+
+        if ( /*_best_node->g < node->g ||*/ (node->T + node->R) > (best->T + best->R) ) {
 			_stats.reward(node->R+node->T);
-            _best_node = node;
+            best = node;
 		}
     }
 	//! Process one node from some of the queues, according to their priorities
@@ -822,7 +842,8 @@ protected:
 	bool create_node(const NodePT& node) {
 		if (is_goal(node) ) {
 			evaluate_reward(node);
-			update_best_node(node);
+			evaluate_terminal_cost(node);
+			update_best_node(node, _best_node, false);
 			if (_log_search )
 				_visited.push_back(node);
 			LPT_INFO("search", "Goal node was found, R(s) = " << node->R << ", T(s) = " << node->T << " generated=" << _stats.generated() << ", best R=" << _best_node->R << ", best T=" << _best_node->T);
@@ -832,15 +853,16 @@ protected:
 		if (is_terminal(node)) {
 			evaluate_reward(node);
 			evaluate_terminal_cost(node);
-			update_best_node(node);
+			update_best_node(node, _best_node, false);
 			if (_log_search )
 				_visited.push_back(node);
 			LPT_INFO("search", "Terminal node was found, R(s) = " << node->R << ", T(s) = " << node->T << " generated=" << _stats.generated() << ", best R=" << _best_node->R << ", best T=" << _best_node->T);
 			return false;
 		}
-		//evaluate_reward(node);
-		//evaluate_terminal_cost(node);
-		//update_best_node(node);
+		evaluate_reward(node);
+		evaluate_terminal_cost(node);
+
+		update_best_node(node, _non_terminal_best_node, true);
 
 		node->unachieved_subgoals = _heuristic.compute_unachieved(node->state);
 
@@ -865,7 +887,6 @@ protected:
 
 		_stats.generation();
 		if (node->decreases_unachieved_subgoals()) _stats.generation_g_decrease();
-
 
 
 		if (_log_search )

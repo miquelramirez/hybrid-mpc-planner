@@ -357,7 +357,6 @@ PythonRunner::set_null_plan() {
 	_problem->setInitialState( *_state );
 	SingletonLock lock(*this);
 	float t0 = aptk::time_used();
-	_current_driver->search();
 	std::vector<const fs0::GroundAction*> empty;
 	_native_plan.interpret_plan( empty );
 	_plan = bp::list();

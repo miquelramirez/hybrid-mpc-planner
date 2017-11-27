@@ -52,6 +52,7 @@ SimBFWSDriver::search() {
 		//_engine->reset();
 		LPT_INFO("search", "Search started...");
 		solved = _engine->solve_model( plan );
+		LPT_INFO("search", "Search finished normally...")
 	}
 	catch (const std::bad_alloc& ex)
 	{
