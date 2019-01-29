@@ -1,7 +1,0 @@
-{
-    "source_files" : [
-        "module.cxx",
-        "python_runner.hxx",
-        "python_runner.cxx"
-    ]
-}
