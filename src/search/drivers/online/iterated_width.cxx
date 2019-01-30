@@ -130,8 +130,9 @@ ExitCode
 IteratedWidthDriver::do_search1(const SimpleStateModel& model, const IteratedWidthDriver::FeatureEvaluatorT& featureset, const Config& config, const std::string& out_dir, float start_time) {
 	create(config, featureset, model, _stats);
 	Utils::SearchExecution<SimpleStateModel> exec_manager(model);
-
-	return exec_manager.do_search(*_engine, out_dir, start_time, _stats);
+	EngineOptions opt;
+	opt.setOutputDir(out_dir);
+	return exec_manager.do_search(*_engine,EngineOptions(), start_time, _stats);
 }
 
 void

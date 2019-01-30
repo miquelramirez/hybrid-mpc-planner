@@ -130,7 +130,9 @@ SimBFWSDriver::do_search1(const SimpleStateModel& model, const Config& config, c
 	create(config,  model, _stats);
 	Utils::SearchExecution<SimpleStateModel> exec_manager(model);
 
-	return exec_manager.do_search(*_engine, out_dir, start_time, _stats);
+	EngineOptions opt;
+	opt.setOutputDir(out_dir);
+	return exec_manager.do_search(*_engine, opt, start_time, _stats);
 }
 
 void
