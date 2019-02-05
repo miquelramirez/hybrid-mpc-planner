@@ -107,6 +107,9 @@ PythonRunner::PythonRunner( const PythonRunner& other ) {
 }
 
 PythonRunner::~PythonRunner() {
+	_problem.release();
+	_registry.release();
+
 	std::cout << "[PythonRunner::Destructor] destroying external symbols" << std::endl;
 	if ( _external_dll_handle == nullptr )
 		return;
