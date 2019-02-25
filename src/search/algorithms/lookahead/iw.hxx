@@ -47,7 +47,8 @@ public:
 	//! The parent node
 	PT parent;
 
-	//! Accummulated cost
+	//! Generation
+	//! GJF: This was marked as accumulated cost when it appears not to be.
 	unsigned g;
 
 	//! The novelty  of the state
@@ -424,6 +425,9 @@ public:
 
 	        	run(s_a, _config._max_width, top_level, a);
 				LPT_INFO("search", "Finished run: max R(s)=" << _best_node->R << " visited: " << _visited.size() );
+				//LPT_INFO("search", "Action ID:" << a);
+				//LPT_INFO("search", "iw.hxx - LINE 428 - best node :" << _best_node->action << _model.getTask().getGroundActions()[_best_node->action]->getName());
+				LPT_INFO("search", "Action:" << _model.getTask().getGroundActions()[a]->getName());
 				std::vector<NodePT> _(_optimal_paths.size(), nullptr);
 				_optimal_paths.swap(_);
 				_evaluator.reset();
@@ -601,11 +605,15 @@ protected:
 	}
 
     void update_best_node( const NodePT& node ) {
-
-        if ( _best_node->g < node->g || node->R > _best_node->R ) {
-			_stats.update_best_reward(node->R);
-			_stats.update_depth_best_reward(node->g);
+				// GJF: Use the accumulated reward to determine the best node.
+				// Only use generation to break ties.
+				if ( node->R > _best_node->R
+					|| (node->R == _best_node->R && _best_node->g < node->g )) {
+						_stats.update_best_reward(node->R);
+						_stats.update_depth_best_reward(node->g);
             _best_node = node;
+						//LPT_INFO("search","Updated best reward to: " << _best_node->R);
+						//LPT_INFO("search","Best g updated to: " << _best_node->g);
 		}
     }
 
