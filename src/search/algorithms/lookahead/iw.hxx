@@ -61,6 +61,12 @@ public:
 	//! NOTE We're assuming we won't generate more than 2^32 ~ 4.2 billion nodes.
 	uint32_t _gen_order;
 
+	//! GJF: Used in calculating children's terminal cost change (instantaneous)
+	float terminal_cost;
+
+	//! GJF: Used in calculating children's stage cost change (instantaneous)
+	float stage_cost;
+
 
 	IWNode() = default;
 	~IWNode() = default;
@@ -80,9 +86,11 @@ public:
 		g(parent ? parent->g+1 : 0),
 		_w(std::numeric_limits<unsigned char>::max()),
         R(0.0f),
-		_gen_order(gen_order)
+		_gen_order(gen_order),
+		terminal_cost(0.0f),
+		stage_cost(0.0f)
 	{
-		assert(_gen_order > 0); // Very silly way to detect overflow, in case we ever generate > 4 billion nodes :-)
+		assert(_gen_order < std::numeric_limits<uint32_t>::max()); // Very silly way to detect overflow, in case we ever generate > 4 billion nodes :-)
 	}
 	//! Constructor with move of the state (cheaper)
 	IWNode(StateT&& _state, typename ActionT::IdType _action, PT _parent, uint32_t gen_order) :
@@ -94,7 +102,7 @@ public:
         R(0.0f),
 		_gen_order(gen_order)
 	{
-		assert(_gen_order > 0); // Very silly way to detect overflow, in case we ever generate > 4 billion nodes :-)
+		assert(_gen_order < std::numeric_limits<uint32_t>::max()); // Very silly way to detect overflow, in case we ever generate > 4 billion nodes :-)
 	}
 
 
@@ -356,13 +364,49 @@ public:
 		return _reward_function;
 	}
 
+	bool different_time_step(const State& s1, const State& s2) const {
+		unsigned ct_var = ProblemInfo::getInstance().getVariableId("clock_time()");
+		float s1_time = fs0::value<float>(s1.getValue(ct_var));
+		float s2_time = fs0::value<float>(s2.getValue(ct_var));
+		return s1_time != s2_time;
+	}
+
 	//! Evaluate reward
 	void evaluate_reward( NodePT n ) const {
 		if ( _reward_function == nullptr ) {
 			n->R = 0.0f;
 			return;
 		}
-		n->R = std::pow(_config._discount_factor,n->g)*_reward_function->evaluate(n->state);
+		// GJF: Reward function gives absolute value of state, here we use the
+		// difference between the new state reward and its successor state's reward.
+		if ( n->parent != nullptr ) {
+			//LPT_INFO("discount", "Parent reward: " << n->parent->R);
+			//LPT_INFO("discount", "Parent state reward: " << _reward_function->evaluate(n->parent->state));
+			//float discount_factor = std::pow(_config._discount_factor, n->g);
+			float terminal_cost = _reward_function->terminal(n->state);
+			float parent_terminal_cost = n->parent->terminal_cost;
+			n->terminal_cost = terminal_cost;
+			float stage_cost = _reward_function->evaluate(n->state);
+			float parent_stage_cost = n->parent->stage_cost;
+			n->stage_cost = stage_cost;
+			// Update terminal cost difference while maintaining stage cost accumulated.
+			n->R += parent_terminal_cost - terminal_cost;
+			// Add stage cost.
+			if (different_time_step(n->state, n->parent->state)){
+				// Since we've changed time steps, the previous timestep's stage cost
+				// has stabilised, so we add a new stage cost fresh.
+				n->R += parent_stage_cost;
+			}
+			n->R += stage_cost - parent_stage_cost;
+			//LPT_INFO("discount", "Child state reward: " << _reward_function->evaluate(n->state));
+			//LPT_INFO("discount", "Child reward increment: " << n->R);
+		} else {
+			float terminal_cost = _reward_function->terminal(n->state);
+			float stage_cost = _reward_function->evaluate(n->state);
+			n->stage_cost = stage_cost;
+			n->terminal_cost = terminal_cost;
+			n->R = terminal_cost + stage_cost;
+		}
 		if ( n->parent != nullptr )
 			n->R += n->parent->R; // accumulate
 		return;
@@ -473,7 +517,7 @@ public:
 		mark_seed_subgoals(root);
 
 		auto nov =_evaluator.evaluate(*root);
-		assert(nov==1);
+		assert(nov==1 || nov==std::numeric_limits<unsigned char>::max());
 		update_novelty_counters_on_generation(nov);
 
 // 		LPT_DEBUG("cout", "Simulation - Seed node: " << *root);
