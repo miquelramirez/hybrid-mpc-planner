@@ -40,11 +40,14 @@ isystem_paths = [HOME + '/local/include']
 lib_paths = [HOME + '/local/lib']
 
 # Boost Python settings
-include_paths.append( '/usr/include/python3.5' )
+PYTHON_INCLUDE_PATH = os.environ.get('PYTHON_INCLUDE_PATH', '/usr/include/python3.5')
+include_paths.append( PYTHON_INCLUDE_PATH )
 
 env.Append( CCFLAGS = '-fPIC' )
 env.Append( LIBPATH = [ '/usr/local/lib' ] )
-env.Append( LIBS = [ '-lboost_python35', '-lpython3.5m', '-ldl' ] )
+BOOST_PYTHON_LIBRARY = os.environ.get('BOOST_PYTHON_VERSION', '-lboost_python35')
+PYTHON_LIBRARY_VERSION = os.environ.get('PYTHON_LIBRARY_VERSION', '-lpython3.5m')
+env.Append( LIBS = [ BOOST_PYTHON_LIBRARY, PYTHON_LIBRARY_VERSION, '-ldl' ] )
 env['STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME']=1
 
 env.Append(CPPPATH = [ os.path.abspath(p) for p in include_paths ])

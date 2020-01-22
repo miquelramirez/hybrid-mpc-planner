@@ -100,7 +100,9 @@ public:
 		g(parent ? parent->g+1 : 0),
 		_w(std::numeric_limits<unsigned char>::max()),
         R(0.0f),
-		_gen_order(gen_order)
+		_gen_order(gen_order),
+		terminal_cost(0.0f),
+		stage_cost(0.0f)
 	{
 		assert(_gen_order < std::numeric_limits<uint32_t>::max()); // Very silly way to detect overflow, in case we ever generate > 4 billion nodes :-)
 	}
@@ -369,6 +371,13 @@ public:
 		float s1_time = fs0::value<float>(s1.getValue(ct_var));
 		float s2_time = fs0::value<float>(s2.getValue(ct_var));
 		return s1_time != s2_time;
+	}
+
+	bool state_after(const State& later, const State& earlier) const {
+		unsigned ct_var = ProblemInfo::getInstance().getVariableId("clock_time()");
+		float later_time = fs0::value<float>(later.getValue(ct_var));
+		float earlier_time = fs0::value<float>(earlier.getValue(ct_var));
+		return later_time > earlier_time;
 	}
 
 	//! Evaluate reward
@@ -651,8 +660,12 @@ protected:
     void update_best_node( const NodePT& node ) {
 				// GJF: Use the accumulated reward to determine the best node.
 				// Only use generation to break ties.
-				if ( node->R > _best_node->R
-					|| (node->R == _best_node->R && _best_node->g < node->g )) {
+				// GJF: We update the reward if the new state is after the old one
+				// chronologically.
+				if ( ((node->R > _best_node->R
+					|| (node->R == _best_node->R && _best_node->g < node->g )) &&
+					(! different_time_step(node->state, _best_node->state))) ||
+					state_after(node->state, _best_node->state) ) {
 						_stats.update_best_reward(node->R);
 						_stats.update_depth_best_reward(node->g);
             _best_node = node;
